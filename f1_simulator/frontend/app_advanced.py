@@ -518,8 +518,69 @@ with col2:
     st.write(f"**Team:** {team_b}")
 
 if st.button("Compare Performance", type="secondary"):
-    st.info("Comparison feature would run prediction for both drivers side-by-side."
-            "\n(Full implementation requires integrated prediction function)")
+    with st.spinner("🔄 Comparing drivers..."):
+        global driver_row, team_row
+        # Get driver data for A
+        driver_a_row = drivers_df[drivers_df['fullName'] == driver_a].iloc[0]
+        team_a_row = teams_df[teams_df['name'] == team_a].iloc[0] if not teams_df.empty else team_row
+
+        # Get driver data for B
+        driver_b_row = drivers_df[drivers_df['fullName'] == driver_b].iloc[0]
+        team_b_row = teams_df[teams_df['name'] == team_b].iloc[0] if not teams_df.empty else team_row
+
+        # Predict for driver A
+        original_driver = driver_row
+        original_team = team_row
+
+        driver_row = driver_a_row
+        team_row = team_a_row
+        result_a = predict_lap_time_advanced()
+
+        # Predict for driver B
+        driver_row = driver_b_row
+        team_row = team_b_row
+        result_b = predict_lap_time_advanced()
+
+        # Restore original
+        driver_row = original_driver
+        team_row = original_team
+
+        # Display comparison
+        st.success("## Driver Comparison Results")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(f"{driver_a.split(' ')[1]} Lap Time", lap_time_to_str(result_a['predicted_lap_time']))
+        with col2:
+            st.metric(f"{driver_b.split(' ')[1]} Lap Time", lap_time_to_str(result_b['predicted_lap_time']))
+        with col3:
+            diff = result_a['predicted_lap_time'] - result_b['predicted_lap_time']
+            st.metric("Time Difference", f"{diff:+.3f}s" if diff != 0 else "0.000s")
+
+        # Skills comparison
+        st.subheader("Driver Skills Comparison")
+        skills_data = {
+            'Driver': [driver_a, driver_b],
+            'Race Skill': [driver_a_row['race_skill'], driver_b_row['race_skill']],
+            'Qualifying Skill': [driver_a_row['qualifying_skill'], driver_b_row['qualifying_skill']],
+            'Wet Skill': [driver_a_row['wet_skill'], driver_b_row['wet_skill']],
+            'Experience': [driver_a_row['experience'], driver_b_row['experience']],
+            'Age': [driver_a_row['age'], driver_b_row['age']]
+        }
+        skills_df = pd.DataFrame(skills_data)
+        st.dataframe(skills_df, width='stretch')
+
+        # Team comparison
+        st.subheader("Team Performance")
+        team_data = {
+            'Team': [team_a, team_b],
+            'Power Rating': [team_a_row['power_rating'], team_b_row['power_rating']],
+            'Aero Efficiency': [team_a_row['aero_efficiency'], team_b_row['aero_efficiency']],
+            'Low Speed': [team_a_row['low_speed'], team_b_row['low_speed']],
+            'High Speed': [team_a_row['high_speed'], team_b_row['high_speed']]
+        }
+        team_df = pd.DataFrame(team_data)
+        st.dataframe(team_df, width='stretch')
 
 st.divider()
 

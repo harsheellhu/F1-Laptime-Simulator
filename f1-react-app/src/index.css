@@ -1,0 +1,222 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Design Tokens ──────────────────────────────────────── */
+:root {
+  --red:         #e8002d;
+  --red-dark:    #b0001f;
+  --red-glow:    rgba(232, 0, 45, 0.35);
+  --red-glass:   rgba(232, 0, 45, 0.08);
+
+  --gold:        #ffd700;
+  --gold-glow:   rgba(255, 215, 0, 0.25);
+  --green:       #00e676;
+  --blue-accent: #0ea5e9;
+
+  /* Glass layers */
+  --glass-1:     rgba(255, 255, 255, 0.06);
+  --glass-2:     rgba(255, 255, 255, 0.04);
+  --glass-3:     rgba(255, 255, 255, 0.02);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-border-red: rgba(232, 0, 45, 0.25);
+
+  /* Backgrounds */
+  --bg-void:    #03030a;
+  --bg-deep:    #060610;
+  --bg-surface: #0c0c1a;
+
+  /* Text */
+  --text-1: #ffffff;
+  --text-2: rgba(255,255,255,0.70);
+  --text-3: rgba(255,255,255,0.40);
+  --text-4: rgba(255,255,255,0.20);
+
+  --font-display: 'Orbitron', monospace;
+  --font-ui:      'Rajdhani', sans-serif;
+  --font-body:    'Inter', sans-serif;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg-void);
+  color: var(--text-1);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--red); border-radius: 2px; }
+
+/* ── Glassmorphism cards ────────────────────────────────── */
+.glass {
+  background: var(--glass-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.glass-red {
+  background: var(--red-glass);
+  border: 1px solid var(--glass-border-red);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(20px);
+}
+
+.glass-dark {
+  background: var(--glass-3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(12px);
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn-primary {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 28px;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--red) 0%, var(--red-dark) 100%);
+  box-shadow: 0 0 24px var(--red-glow), 0 4px 16px rgba(0,0,0,0.4);
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.12),transparent);
+  opacity:0;
+  transition:opacity 0.25s;
+}
+.btn-primary:hover { transform:translateY(-2px); box-shadow: 0 0 40px var(--red-glow), 0 8px 24px rgba(0,0,0,0.5); }
+.btn-primary:hover::after { opacity:1; }
+.btn-primary:active { transform:translateY(0); }
+.btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+
+.btn-ghost {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 11px 24px;
+  cursor: pointer;
+  background: var(--glass-2);
+  backdrop-filter: blur(12px);
+  transition: all 0.2s;
+}
+.btn-ghost:hover { border-color: var(--red); color:#fff; background: var(--red-glass); }
+
+/* ── Typography ─────────────────────────────────────────── */
+.heading-xl {
+  font-family: var(--font-display);
+  font-size: clamp(2.8rem, 9vw, 7.5rem);
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+}
+.heading-lg  { font-family:var(--font-display); font-size:clamp(1.4rem,3vw,2.2rem); font-weight:800; }
+.heading-md  { font-family:var(--font-display); font-size:1rem; font-weight:700; letter-spacing:0.05em; }
+.label       { font-family:var(--font-display); font-size:0.58rem; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:var(--text-3); }
+.value       { font-family:var(--font-display); font-size:1.1rem; font-weight:700; }
+
+/* ── Animations ─────────────────────────────────────────── */
+@keyframes float         { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+@keyframes pulse-red     { 0%,100%{box-shadow:0 0 6px var(--red-glow)} 50%{box-shadow:0 0 20px var(--red-glow), 0 0 40px rgba(232,0,45,.15)} }
+@keyframes shimmer       { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
+@keyframes scanline      { 0%{top:-2px} 100%{top:100%} }
+@keyframes glow-border   { 0%,100%{border-color:rgba(232,0,45,.2)} 50%{border-color:rgba(232,0,45,.5)} }
+@keyframes fadeUp        { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+@keyframes spin-slow     { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* ── Gradient text ──────────────────────────────────────── */
+.grad-red {
+  background: linear-gradient(135deg, #e8002d 0%, #ff4060 50%, #e8002d 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Utility ────────────────────────────────────────────── */
+.divider-red { width:48px; height:3px; background:linear-gradient(90deg,var(--red),transparent); border-radius:2px; }
+
+/* ── Input range custom ─────────────────────────────────── */
+input[type=range] {
+  -webkit-appearance:none;
+  width:100%; height:4px; border-radius:2px; outline:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:16px; height:16px; border-radius:50%;
+  background:var(--red);
+  box-shadow:0 0 8px var(--red-glow);
+  cursor:pointer;
+}
+
+/* ── Select ─────────────────────────────────────────────── */
+.f1-select {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  padding: 10px 14px;
+  width: 100%;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.f1-select:focus { border-color: var(--red); }
+.f1-select option { background: #0c0c1a; }
+
+/* ── Status pill ─────────────────────────────────────────── */
+.status-dot {
+  width:7px; height:7px; border-radius:50%;
+  display:inline-block;
+}
+.status-dot.online  { background:var(--green); box-shadow:0 0 8px var(--green); }
+.status-dot.offline { background:var(--gold);  box-shadow:0 0 8px var(--gold); }
+.status-dot.loading { background:var(--text-3); }
+
+/* ── API offline banner ─────────────────────────────────── */
+.offline-banner {
+  background: rgba(255,200,0,0.08);
+  border: 1px solid rgba(255,200,0,0.25);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* ── Track canvas wrapper ─────────────────────────────────── */
+.track-wrap {
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  border:1px solid var(--glass-border);
+  background:var(--bg-deep);
+}
