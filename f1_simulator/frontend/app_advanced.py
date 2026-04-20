@@ -50,9 +50,12 @@ st.markdown("""
 
 
 @st.cache_data
-def load_databases(data_dir: str = "f1_simulator/data"):
+def load_databases(data_dir: str = None):
     """Load all F1 databases."""
-    data_dir = Path(data_dir)
+    if data_dir is None:
+        data_dir = Path(__file__).parent.parent / "data"
+    else:
+        data_dir = Path(data_dir)
 
     d = {}
     files = {
@@ -74,15 +77,19 @@ def load_databases(data_dir: str = "f1_simulator/data"):
 
 
 @st.cache_resource
-def load_model(model_path: str = "f1_simulator/model/advanced/model.pkl"):
+def load_model(model_path: str = None):
     """Load the trained ML model."""
+    if model_path is None:
+        model_dir = Path(__file__).parent.parent / "model" / "advanced"
+        model_path = model_dir / "model.pkl"
+    
     try:
         with open(model_path, 'rb') as f:
             data = pickle.load(f)
         return data
     except FileNotFoundError:
         # Try legacy path
-        legacy = Path("f1_simulator/model/model.pkl")
+        legacy = Path(__file__).parent.parent / "model" / "model.pkl"
         if legacy.exists():
             with open(legacy, 'rb') as f:
                 return pickle.load(f)
@@ -160,6 +167,7 @@ else:
     driver_id = 1
     driver_code = "UNK"
     team_name = "Unknown"
+    selected_driver_name = "Unknown Driver"
 
 # Team selection (optional override)
 st.sidebar.subheader("2. Select Team (Optional)")
@@ -194,6 +202,7 @@ if not circuits_df.empty:
     circuit_turns = circuit_row['turns']
     st.sidebar.info(f"**Length:** {circuit_length} km\n**Turns:** {circuit_turns}")
 else:
+    selected_circuit = 'Silverstone Circuit'
     circuit_id = 'silverstone'
     circuit_length = 5.891
     circuit_turns = 18
@@ -218,7 +227,7 @@ lap_number = st.sidebar.slider("Lap Number", 1, 70, 10)
 total_laps = st.sidebar.slider("Total Race Laps", 1, 100, 52)
 
 # Simulate button
-simulate_button = st.sidebar.button("🚀 PREDICT LAP TIME", type="primary", use_container_width=True)
+simulate_button = st.sidebar.button("🚀 PREDICT LAP TIME", type="primary", width='stretch')
 
 # ============================================
 # MAIN DISPLAY
@@ -265,6 +274,8 @@ def predict_lap_time_advanced():
     Advanced prediction with all engineered features.
     This replicates the feature engineering pipeline.
     """
+    global driver_row, team_row, circuit_row
+    
     # Get driver skills
     driver_qual_skill = driver_row['qualifying_skill']
     driver_race_skill = driver_row['race_skill']
@@ -464,7 +475,7 @@ if simulate_button:
                 tire_deg = min(0.05 * lap, 2.0)
                 track_evol = min(lap * 0.02, 0.3)
 
-                lap_time = (base_time + fuel_effect - track_evol + tire_deg) * weather_mult
+                lap_time = (base_time + fuel_effect - track_evol + tire_deg) * weather_data['multiplier']
                 lap_times.append(lap_time)
 
             fig, ax = plt.subplots(figsize=(12, 4))
@@ -549,7 +560,7 @@ with tab1:
         feat_df = pd.DataFrame(top_features, columns=['Feature', 'Importance'])
         fig = px.bar(feat_df, x='Importance', y='Feature', orientation='h',
                      title="Feature Importance (SHAP values from XGBoost)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 with tab2:
     st.subheader("Model Performance Metrics")
@@ -562,7 +573,7 @@ with tab2:
     }
 
     mdf = pd.DataFrame(metrics_data).T
-    st.dataframe(mdf.style.format("{:.3f}"), use_container_width=True)
+    st.dataframe(mdf.style.format("{:.3f}"), width='stretch')
 
     st.write("**Cross-Validation:** 5-fold CV MAE mean: 2.15s ± 0.12s")
 
@@ -571,7 +582,7 @@ with tab3:
     if not circuits_df.empty:
         st.dataframe(
             circuits_df[['name', 'country', 'length_km', 'turns', 'track_type', 'drs_zones']],
-            use_container_width=True
+            width='stretch'
         )
 
 # Footer

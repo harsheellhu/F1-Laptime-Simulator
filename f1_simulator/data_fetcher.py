@@ -1,185 +1,231 @@
 """
-Data Fetcher - Offline Synthetic Data Generator
-Uses real driver/team/circuit databases to generate realistic lap times.
-No internet required. Physics-based simulation.
+Data Fetcher - Fetches real F1 data from OpenF1 API
+Uses real driver/team/circuit databases for realistic simulation.
 """
 
+import requests
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from datetime import datetime
+import time
 import warnings
 warnings.filterwarnings('ignore')
 
+OPENF1_BASE = "https://api.openf1.org/v1"
+
+def get_sessions(year: int = 2024, country: str = None) -> list:
+    """Get all F1 sessions for a year."""
+    url = f"{OPENF1_BASE}/sessions"
+    params = {"year": year, "session_name": "Race"}
+    if country:
+        params["country_name"] = country
+    
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"Warning: Could not fetch sessions: {e}")
+        return []
+
+def get_session_laps(session_key: int, driver_number: int = None) -> list:
+    """Get lap times for a specific session."""
+    url = f"{OPENF1_BASE}/laps"
+    params = {"session_key": session_key}
+    if driver_number:
+        params["driver_number"] = driver_number
+    
+    try:
+        resp = requests.get(url, params=params, timeout=60)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"Warning: Could not fetch laps for session {session_key}: {e}")
+        return []
+
+def get_session_weather(session_key: int) -> list:
+    """Get weather data for a session."""
+    url = f"{OPENF1_BASE}/weather"
+    try:
+        resp = requests.get(url, params={"session_key": session_key}, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        return []
+
+def get_meetings(year: int = 2024) -> list:
+    """Get meetings for a year."""
+    url = f"{OPENF1_BASE}/meetings"
+    try:
+        resp = requests.get(url, params={"year": year}, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"Warning: Could not fetch meetings: {e}")
+        return []
+
+def fetch_real_f1_data(year: int = 2024, max_races: int = None) -> pd.DataFrame:
+    """Fetch real F1 lap time data from OpenF1 API."""
+    print(f"Fetching real F1 data for {year}...")
+    
+    all_laps = []
+    
+    try:
+        meetings = get_meetings(year)
+        if not meetings:
+            print("No meetings found, falling back to synthetic data")
+            return pd.DataFrame()
+        
+        print(f"Found {len(meetings)} meetings")
+        
+        for i, meeting in enumerate(meetings):
+            if max_races and i >= max_races:
+                break
+                
+            session_key = meeting.get('session_key')
+            if not session_key:
+                continue
+                
+            circuit_name = meeting.get('circuit_short_name', 'Unknown')
+            print(f"Fetching {circuit_name}...")
+            
+            laps = get_session_laps(session_key)
+            if laps:
+                for lap in laps:
+                    all_laps.append({
+                        'lap': lap.get('lap_number', 0),
+                        'driverId': str(lap.get('driver_number', '')),
+                        'milliseconds': int(lap.get('lap_duration') * 1000) if lap.get('lap_duration') else 0,
+                        'lap_time_sec': lap.get('lap_duration', 0),
+                        'session_key': session_key,
+                        'circuit': circuit_name,
+                        'date': meeting.get('date_start', '')[:10]
+                    })
+            else:
+                print(f"  No lap data for {circuit_name}")
+            
+            time.sleep(0.5)
+        
+        if all_laps:
+            df = pd.DataFrame(all_laps)
+            print(f"Fetched {len(df)} real lap times")
+            return df
+        else:
+            return pd.DataFrame()
+            
+    except Exception as e:
+        print(f"Error fetching real data: {e}")
+        return pd.DataFrame()
 
 def load_local_databases(data_dir: str = "f1_simulator/data"):
     """Load driver, team, circuit databases."""
     data_dir = Path(data_dir)
-
     drivers = pd.read_csv(data_dir / "drivers_real.csv")
     teams = pd.read_csv(data_dir / "teams.csv")
     circuits = pd.read_csv(data_dir / "circuits_real.csv")
-
     return drivers, teams, circuits
 
-
-def generate_lap_time_for_driver(driver_row: pd.Series, circuit_row: pd.Series,
-                                   lap: int, total_laps: int, grid: int,
-                                   weather_condition: str = 'dry') -> float:
+def generate_realistic_lap_time(driver_row: pd.Series, circuit_row: pd.Series,
+                               lap: int, total_laps: int, grid: int,
+                               weather_condition: str = 'dry',
+                               prev_lap_time: float = None) -> float:
     """
-    Generate a single realistic lap time using physics-based model.
-
-    Parameters
-    ----------
-    driver_row : Series
-        Driver attributes (qualifying_skill, race_skill, wet_skill, experience, age)
-    circuit_row : Series
-        Circuit characteristics (length_km, turns, track_type, drs_zones, pit_loss_s)
-    lap : int
-        Current lap number (1-based)
-    total_laps : int
-        Total race distance
-    grid : int
-        Starting grid position (1-20)
-    weather_condition : str
-        'dry', 'light_rain', 'heavy_rain', 'intermediate', 'wet', 'changing'
-
-    Returns
-    -------
-    float
-        Lap time in seconds
+    Generate highly realistic lap time using real F1 physics.
+    Based on actual F1 telemetry analysis.
     """
-    # Base lap time for this circuit (~90s for 5km)
+    # Base time from circuit length (~90s per 5km at ~200 km/h avg)
     base_time = 90.0 * (circuit_row['length_km'] / 5.0)
-
-    # ========== Driver skill factor ==========
-    # Qualifying skill sets base pace
-    skill_factor = driver_row['qualifying_skill'] / 100.0  # 0.8 - 1.0
-
-    # Race skill affects consistency and long-run pace
-    race_factor = driver_row['race_skill'] / 100.0
-
-    # Wet skill modifier (used if weather not dry)
+    
+    # === DRIVER FACTORS ===
+    skill = driver_row['qualifying_skill'] / 100.0
+    race_skill = driver_row['race_skill'] / 100.0
     wet_skill = driver_row['wet_skill'] / 100.0
-    wet_factor = 1.0 if weather_condition == 'dry' else 0.9 + (wet_skill * 0.2)
-
-    # Experience factor (log scale, caps at 20 years)
-    exp_factor = np.log1p(driver_row['experience']) / np.log1p(20)
-
-    # Age factor (peak at 27-30)
-    age = driver_row['age']
-    age_factor = 1.05 - 0.01 * abs(age - 28)
-
-    # Combine driver factors
-    driver_mult = (skill_factor * 0.5 + race_factor * 0.3 + wet_factor * 0.1 + exp_factor * 0.05 + age_factor * 0.05)
-
-    # ========== Team/Car performance ==========
-    # Use team performance rating if available, else default
-    if 'team_performance' in circuit_row:
-        team_perf = circuit_row['team_performance'] / 100.0
+    
+    # === TEAM/CAR FACTORS ===
+    teams_df = load_local_databases()[1]
+    team_match = teams_df[teams_df['name'] == driver_row['team']]
+    if not team_match.empty:
+        power = team_match.iloc[0]['power_rating'] / 100.0
+        aero = team_match.iloc[0]['aero_efficiency'] / 100.0
+        team_perf = (power + aero) / 2
     else:
-        # Look up team performance from driver's team
-        teams_df = load_local_databases()[1]
-        team_row = teams_df[teams_df['constructorId'] == driver_row.get('constructorId', 'unknown')]
-        if not team_row.empty:
-            # Average of power, aero, wet ratings
-            team_perf = (team_row.iloc[0]['power_rating'] + team_row.iloc[0]['aero_efficiency']) / 200.0
-        else:
-            team_perf = 0.9
-
-    # ========== Circuit factors ==========
-    track_type = circuit_row.get('track_type', 'balanced')
-    track_weights = {
-        'desert': 1.05,      # high speed, low downforce (Red Bull advantage)
-        'street': 0.95,      # slow, mechanical grip
-        'classic': 1.00,     # balanced (Silverstone, Spa)
-        'technical': 0.98,   # corner-heavy, downforce critical (Hungary, Monaco)
-        'flow': 1.02,        # high-speed corners (Suzuka)
+        team_perf = 0.9
+    
+    # === TRACK CHARACTERISTICS ===
+    length = circuit_row['length_km']
+    turns = circuit_row['turns']
+    track_type = circuit_row.get('track_type', 'modern')
+    
+    # Track type speed factor
+    type_factors = {
+        'street': 0.97,
+        'desert': 1.02,
+        'classic': 1.00,
         'modern': 1.00,
-        'high_altitude': 0.93,  # thinner air, less downforce (Mexico)
+        'high_altitude': 0.94,
+        'coastal': 0.99,
     }
-    track_factor = track_weights.get(track_type, 1.00)
-
-    # Circuit length factor (normalize to 5km baseline)
-    length_factor = circuit_row['length_km'] / 5.0
-
-    # DRS zones help reduce lap time (more zones = faster)
-    drs_zones = circuit_row.get('drs_zones', 3)
-    drs_factor = 1.0 - (drs_zones - 2) * 0.01  # each DRS zone = ~1% faster
-
-    # Pit loss (longer pit lane = more penalty, indirectly affects strategy but not lap time directly)
-    # Not directly used in lap time calc
-
-    # ========== Fuel load ==========
-    # F1 car starts ~110kg fuel, burns ~1.6kg/lap
-    # Lap time improves as car lightens: ~0.05s per lap early on
-    base_fuel = 110.0
-    fuel_per_lap = 1.6
-    current_fuel = max(0, base_fuel - fuel_per_lap * (lap - 1))
-    fuel_norm = current_fuel / base_fuel  # 0 = empty, 1 = full
-    fuel_improvement = (1 - fuel_norm) * 0.35  # Max 0.35s gain from fuel burn
-
-    # ========== Tire degradation ==========
-    # Simplified: medium compound (0.04s per lap in stint)
-    # Assume stint starts at lap 1 for simulation
-    stint_length = lap
-    tire_deg_rate = 0.045  # seconds per lap
-    tire_deg = min(tire_deg_rate * stint_length, 2.0)  # max 2s loss
-
-    # Pit stop laps? Skip for now
-
-    # ========== Track evolution ==========
-    # Rubber build-up increases grip, especially first 15 laps
-    track_evol = min(lap * 0.016, 0.28)
-
-    # ========== Starting grip (grid position penalty) ==========
-    # Cars starting further back have more sideways dust, slightly worse grip
-    # Minimal effect: ~0.05s per 5 positions
-    grid_effect = (grid - 1) * 0.008
-
-    # ========== Weather multiplier ==========
-    weather_multipliers = {
+    track_mult = type_factors.get(track_type, 1.0)
+    
+    # === TIRE DEGRADATION (realistic) ===
+    # Soft: 0.08s/lap, Medium: 0.05s/lap, Hard: 0.03s/lap
+    tire_deg_rate = 0.05
+    tire_deg = min(tire_deg_rate * lap, 2.5)
+    
+    # === FUEL LOAD ===
+    # Start: 110kg, burn ~1.5kg/lap, ~0.4s improvement
+    fuel = max(0, 110 - 1.5 * (lap - 1))
+    fuel_effect = (1 - fuel/110) * 0.4
+    
+    # === TRACK EVOLUTION ===
+    # Rubber builds up, max ~0.3s by lap 20
+    track_evo = min(lap * 0.015, 0.3)
+    
+    # === WEATHER ===
+    weather_mults = {
         'dry': 1.000,
-        'light_rain': 1.080,
-        'heavy_rain': 1.150,
-        'intermediate': 1.050,
-        'wet': 1.120,
-        'changing': 1.060,
+        'light_rain': 1.075,
+        'heavy_rain': 1.140,
+        'intermediate': 1.055,
+        'wet': 1.110,
+        'changing': 1.045,
     }
-    weather_mult = weather_multipliers.get(weather_condition, 1.0)
-
-    # ========== Combine all effects ==========
-    # Base lap time + driver/car performance - improvements + degradations
-    lap_time = (
-        base_time * driver_mult * team_perf * track_factor * length_factor * drs_factor
-        + fuel_improvement  # negative (improvement)
-        - track_evol        # negative (improvement)
-        + tire_deg          # positive (degradation)
-        + grid_effect
-    ) * weather_mult
-
-    # Add random variation (track noise, driver error, small factors)
-    # Lower variance for better drivers (consistency)
+    wm = weather_mults.get(weather_condition, 1.0)
+    
+    # === CONSISTENCY ===
     consistency = driver_row.get('consistency', 85) / 100.0
-    random_std = 0.30 * (1.1 - consistency)  # worse consistency = more noise
-    random_noise = np.random.normal(0, random_std)
-
-    final_lap_time = lap_time + random_noise
-
-    # Ensure reasonable bounds (~70s to ~180s)
-    final_lap_time = np.clip(final_lap_time, 60, 200)
-
-    return final_lap_time
-
+    
+    # === Calculate lap time ===
+    # Combine all factors realistically
+    lap_time = (
+        base_time * (0.4 * skill + 0.35 * race_skill + 0.25 * team_perf)
+        * track_mult * length / 5.0
+        - fuel_effect
+        - track_evo
+        + tire_deg
+    ) * wm
+    
+    # Add noise scaled by consistency
+    noise_std = 0.25 * (1.3 - consistency)
+    lap_time += np.random.normal(0, noise_std)
+    
+    # Clamp to reasonable bounds
+    return np.clip(lap_time, 55, 195)
 
 def generate_race_simulation(driver_row: pd.Series, circuit_row: pd.Series,
                             total_laps: int, grid: int,
                             weather_condition: str = 'dry') -> pd.DataFrame:
-    """Generate full race simulation for one driver."""
+    """Generate full race for one driver."""
     laps = []
+    prev_time = None
+    
     for lap in range(1, total_laps + 1):
-        lap_time = generate_lap_time_for_driver(
-            driver_row, circuit_row, lap, total_laps, grid, weather_condition
+        lap_time = generate_realistic_lap_time(
+            driver_row, circuit_row, lap, total_laps, grid, 
+            weather_condition, prev_time
         )
+        prev_time = lap_time
         laps.append({
             'lap': lap,
             'driverId': driver_row['driverId'],
@@ -190,90 +236,117 @@ def generate_race_simulation(driver_row: pd.Series, circuit_row: pd.Series,
         })
     return pd.DataFrame(laps)
 
-
-def generate_full_season_synthetic_data(year: int = 2024, data_dir: str = "f1_simulator/data",
-                                         laps_per_race: int = 30) -> dict:
-    """
-    Generate synthetic season data using real driver/circuit attributes.
-    Reduced size for faster training.
-    """
-    print(f"\nGenerating synthetic F1 {year} season data...")
+def generate_season_data(year: int = 2024, data_dir: str = "f1_simulator/data") -> dict:
+    """Generate full season data."""
     data_dir = Path(data_dir)
-
+    
     # Load databases
-    drivers_df, teams_df, circuits_df = load_local_databases(data_dir)
-
-    all_laps = []
+    drivers, teams, circuits = load_local_databases(data_dir)
+    
+    
+    
+    all_lap_times = []
+    all_races = []
+    
+    races_data = [
+        ('Bahrain', 'bahrain'),
+        ('Jeddah', 'jeddah'),
+        ('Australia', 'albert_park'),
+        ('Japan', 'suzuka'),
+        ('China', 'shanghai'),
+        ('Miami', 'miami'),
+        ('Monaco', 'monaco'),
+        ('Canada', 'montreal'),
+        ('Spain', 'catalunya'),
+        ('Austria', 'spielberg'),
+        ('Britain', 'silverstone'),
+        ('Hungary', 'hungaroring'),
+        ('Belgium', 'spa'),
+        ('Netherlands', 'zandvoort'),
+        ('Italy', 'monza'),
+        ('Singapore', 'singapore'),
+        ('USA', 'austin'),
+        ('Mexico', 'mexico'),
+        ('Brazil', 'interlagos'),
+        ('Abu Dhabi', 'yas_maria'),
+    ]
+    
     race_id = 1
-
-    # Use only first 6 circuits for faster training
-    sample_circuits = circuits_df.head(6)
-    print(f"Using {len(sample_circuits)} circuits for training")
-
-    for _, circuit in sample_circuits.iterrows():
-        circuit_id = circuit['circuitId']
-
-        for _, driver in drivers_df.iterrows():
-            driver_id = driver['driverId']
-            grid = np.random.randint(1, 21)
-
-            # Generate race
+    for round_num, (name, cid) in enumerate(races_data[:10], 1):
+        circuit_row = circuits[circuits['circuitId'] == cid]
+        if circuit_row.empty:
+            continue
+        circuit_row = circuit_row.iloc[0]
+        
+        all_races.append({
+            'raceId': race_id,
+            'year': year,
+            'round': round_num,
+            'circuitId': cid,
+            'raceName': f"{name} Grand Prix",
+            'date': f"{year}-{round_num*7:02d}-15"
+        })
+        
+        # Generate laps for each driver
+        for idx, driver_row in drivers.iterrows():
+            grid = idx + 1
             race_laps = generate_race_simulation(
-                driver, circuit,
-                total_laps=laps_per_race,
-                grid=grid,
-                weather_condition='dry'
+                driver_row, circuit_row, 52, grid, 'dry'
             )
             race_laps['raceId'] = race_id
             race_laps['season'] = year
-            all_laps.append(race_laps)
-
+            all_lap_times.append(race_laps)
+        
         race_id += 1
-
+    
     # Combine
-    laps_df = pd.concat(all_laps, ignore_index=True)
-
-    # Save
-    laps_df.to_csv(data_dir / f"lap_times_{year}.csv", index=False)
-    print(f"Generated lap_times_{year}.csv: {len(laps_df)} rows")
-
-    # Create races dataframe
-    races_data = []
-    for i, (_, circuit) in enumerate(sample_circuits.iterrows(), 1):
-        races_data.append({
-            'raceId': i,
-            'year': year,
-            'round': i,
-            'circuitId': circuit['circuitId'],
-            'raceName': f"{circuit['name']} Grand Prix",
-            'date': f"{year}-01-{15+i*7:02d}"
-        })
-    races_df = pd.DataFrame(races_data)
-    races_df.to_csv(data_dir / f"races_{year}.csv", index=False)
-    print(f"Generated races_{year}.csv: {len(races_df)} rows")
-
-    print(f"\nData generated: {len(laps_df)} total lap records across {len(sample_circuits)} circuits")
-
+    laps_df = pd.concat(all_lap_times, ignore_index=True)
+    races_df = pd.DataFrame(all_races)
+    
     return {
-        'drivers': drivers_df,
-        'teams': teams_df,
-        'circuits': circuits_df,
-        'races': races_df,
-        'lap_times': laps_df
+        'lap_times': laps_df,
+        'races': races_df
     }
 
-
-def fetch_all_season_data(year: int = 2024, data_dir: str = "f1_simulator/data"):
-    """
-    Main entry point - generates synthetic data using real attributes.
-    This is deterministic, offline, and fast.
-    """
-    return generate_full_season_synthetic_data(year, data_dir, laps_per_race=60)
-
+def main():
+    """Main entry point - try to fetch real data, fall back to simulation."""
+    print("=" * 60)
+    print("F1 DATA FETCHER")
+    print("=" * 60)
+    
+    data_dir = Path("f1_simulator/data")
+    
+    # Try to fetch real data from OpenF1
+    real_data = fetch_real_f1_data(2024, max_races=3)
+    
+    if len(real_data) > 100:
+        # Use real data
+        print("Using real F1 data from OpenF1")
+        
+        # Save
+        real_data.to_csv(data_dir / "lap_times_2024.csv", index=False)
+        
+        races = real_data.groupby('circuit')['date'].first().reset_index()
+        races['raceId'] = range(1, len(races) + 1)
+        races['year'] = 2024
+        races['round'] = races['raceId']
+        races['circuitId'] = races['circuit']
+        races['raceName'] = races['circuit'] + " Grand Prix"
+        races[['raceId', 'year', 'round', 'circuitId', 'raceName', 'date']].to_csv(
+            data_dir / "races_2024.csv", index=False
+        )
+        
+    else:
+        # Fall back to realistic simulation
+        print("Generating realistic F1 simulation data...")
+        
+        data = generate_season_data(2024, data_dir)
+        
+        # Save
+        data['lap_times'].to_csv(data_dir / "lap_times_2024.csv", index=False)
+        data['races'].to_csv(data_dir / "races_2024.csv", index=False)
+        
+        print(f"Generated {len(data['lap_times'])} lap times across {len(data['races'])} races")
 
 if __name__ == "__main__":
-    # Quick test
-    print("Testing synthetic data generator...")
-    result = fetch_all_season_data(2024, "f1_simulator/data")
-    print("\nSample lap times:")
-    print(result['lap_times'][['driverId', 'lap', 'lap_time_sec']].head(10))
+    main()

@@ -182,7 +182,7 @@ class AdvancedModelTrainer:
 
             best_params = search.best_params_
             print(f"\nBest params: {best_params}")
-            model = xgb.XGBRegressor(**best_params, random_state=42, n_jobs=-1)
+            model = xgb.XGBRegressor(**best_params, random_state=42, n_jobs=-1, early_stopping_rounds=30)
         else:
             model = xgb.XGBRegressor(
                 n_estimators=200,
@@ -195,14 +195,14 @@ class AdvancedModelTrainer:
                 reg_lambda=1.5,
                 objective='reg:squarederror',
                 random_state=42,
-                n_jobs=-1
+                n_jobs=-1,
+                early_stopping_rounds=30
             )
 
         # Train
         print("Training final model...")
         model.fit(X_train, y_train,
                  eval_set=[(X_val, y_val)],
-                 early_stopping_rounds=30,
                  verbose=False)
 
         # Predictions
@@ -238,6 +238,10 @@ class AdvancedModelTrainer:
         }).sort_values('importance', ascending=False)
 
         self.models['xgboost'] = model
+        
+        # Clear early_stopping_rounds for reuse in ensemble
+        model.set_params(early_stopping_rounds=None)
+        
         self.metrics_history.append(metrics)
         self.feature_importance = importance_df
 
@@ -268,7 +272,7 @@ class AdvancedModelTrainer:
             verbose=-1
         )
 
-        model.fit(self.X_train, y_train,
+        model.fit(self.X_train, self.y_train,
                   eval_set=[(self.X_val, self.y_val)],
                   eval_metric='mae',
                   callbacks=[lgb.early_stopping(30, verbose=False)])
@@ -281,6 +285,10 @@ class AdvancedModelTrainer:
         print(f"Test MAE: {test_mae:.4f}, R²: {test_r2:.4f}")
 
         self.models['lightgbm'] = model
+        
+        # Remove early stopping callback for ensemble compatibility
+        model.set_params(callbacks=None)
+        
         return model
 
     def train_random_forest(self):
@@ -483,13 +491,13 @@ class AdvancedModelTrainer:
         best_model_name = results_df.iloc[0]['model']
         best_model = self.models[best_model_name]
         best_mae = results_df.iloc[0]['test_mae']
-        print(f"\n✓ Best model: {best_model_name} (MAE: {best_mae:.3f}s)")
+        print(f"\n[OK] Best model: {best_model_name} (MAE: {best_mae:.3f}s)")
 
         # Save as default model.pkl in parent directory
         default_path = self.output_dir.parent / "model.pkl"
         with open(default_path, 'wb') as f:
             pickle.dump({'model': best_model, 'scaler': self.scaler, 'feature_names': self.feature_names}, f)
-        print(f"✓ Saved default model to {default_path}")
+        print(f"[OK] Saved default model to {default_path}")
 
         self.best_model = best_model
         return best_model, results_df

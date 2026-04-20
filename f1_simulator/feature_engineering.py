@@ -98,6 +98,11 @@ class AdvancedFeatureEngineer:
         # Merge with circuit characteristics
         merged = merged.merge(self.circuits_df, on='circuitId', how='left')
 
+        # Calculate total laps per race from the data (max lap number)
+        total_laps_per_race = merged.groupby('raceId')['lap'].max().reset_index()
+        total_laps_per_race.columns = ['raceId', 'laps']
+        merged = merged.merge(total_laps_per_race, on='raceId', how='left')
+
         if sample_races:
             unique_races = merged['raceId'].unique()[:sample_races]
             merged = merged[merged['raceId'].isin(unique_races)]
@@ -329,6 +334,10 @@ class AdvancedFeatureEngineer:
         feature_cols = [c for c in clean_df.columns if c not in exclude_cols and c != target_col]
 
         X = clean_df[feature_cols]
+        
+        # Ensure only numeric columns
+        X = X.select_dtypes(include=['number'])
+        
         y = clean_df[target_col]
 
         print(f"Feature matrix: {X.shape[0]} samples × {X.shape[1]} features")

@@ -194,7 +194,7 @@ if mode == "Single Lap":
     with col1:
         lap = st.slider("Lap Number", min_value=1, max_value=70, value=10)
 
-        if st.button("Predict Lap Time", type="primary", use_container_width=True):
+        if st.button("Predict Lap Time", type="primary", width='stretch'):
             with st.spinner("Calculating..."):
                 pred = predict_single_lap(model_data, lap, grid, driver_id, constructor_id, circuit_id, year, length)
 
@@ -229,7 +229,7 @@ elif mode == "Full Race Simulation":
     with col1:
         num_laps = st.slider("Number of Laps", min_value=5, max_value=100, value=50)
 
-        if st.button("Simulate Race", type="primary", use_container_width=True):
+        if st.button("Simulate Race", type="primary", width='stretch'):
             with st.spinner(f"Simulating {num_laps} laps..."):
                 lap_times = predict_multi_lap(model_data, num_laps, grid, driver_id, constructor_id, circuit_id, year, length)
 
@@ -258,7 +258,7 @@ elif mode == "Full Race Simulation":
                             "Lap": range(1, num_laps + 1),
                             "Lap Time (s)": [f"{t:.3f}" for t in lap_times]
                         })
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width='stretch')
 
     with col2:
         st.subheader("Race Configuration")

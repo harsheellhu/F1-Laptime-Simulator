@@ -1,7 +1,11 @@
 raceId,year,round,circuitId,raceName,date
-1,2024,1,bahrain,Bahrain International Circuit Grand Prix,2024-01-22
-2,2024,2,jeddah,Jeddah Corniche Circuit Grand Prix,2024-01-29
-3,2024,3,albert_park,Albert Park Circuit Grand Prix,2024-01-36
-4,2024,4,suzuka,Suzuka International Racing Course Grand Prix,2024-01-43
-5,2024,5,shanghai,Shanghai International Circuit Grand Prix,2024-01-50
-6,2024,6,miami,Miami International Autodrome Grand Prix,2024-01-57
+1,2024,1,bahrain,Bahrain Grand Prix,2024-07-15
+2,2024,2,jeddah,Jeddah Grand Prix,2024-14-15
+3,2024,3,albert_park,Australia Grand Prix,2024-21-15
+4,2024,4,suzuka,Japan Grand Prix,2024-28-15
+5,2024,5,shanghai,China Grand Prix,2024-35-15
+6,2024,6,miami,Miami Grand Prix,2024-42-15
+7,2024,7,monaco,Monaco Grand Prix,2024-49-15
+8,2024,8,montreal,Canada Grand Prix,2024-56-15
+9,2024,9,catalunya,Spain Grand Prix,2024-63-15
+10,2024,10,spielberg,Austria Grand Prix,2024-70-15
