@@ -1,0 +1,21 @@
+driverId,code,forename,surname,fullName,nationality,team,constructorId,age,experience,qualifying_skill,race_skill,wet_skill,aggression,consistency,championships,constructorId_num,driverId_num
+ver,VER,Max,Verstappen,Max Verstappen,Netherlands,Red Bull Racing,red_bull,26,10,95,97,93,90,92,4,1,1
+per,PER,Sergio,Perez,Sergio Perez,Mexico,Red Bull Racing,red_bull,34,14,88,90,85,92,85,0,1,2
+ham,HAM,Lewis,Hamilton,Lewis Hamilton,United Kingdom,Mercedes,mercedes,39,18,92,94,96,85,90,7,2,3
+rus,RUS,George,Russell,George Russell,United Kingdom,Mercedes,mercedes,26,5,91,90,88,87,91,0,2,4
+lec,LEC,Charles,Leclerc,Charles Leclerc,Monaco,Ferrari,ferrari,26,6,93,91,89,91,86,0,3,5
+sai,SAI,Carlos,Sainz,Carlos Sainz,Spain,Ferrari,ferrari,29,9,89,90,87,88,89,0,3,6
+nor,NOR,Lando,Norris,Lando Norris,United Kingdom,McLaren,mclaren,24,6,91,92,90,93,88,0,4,7
+pia,PIA,Oscar,Piastri,Oscar Piastri,Australia,McLaren,mclaren,23,2,89,90,88,89,92,0,4,8
+alo,ALO,Fernando,Alonso,Fernando Alonso,Spain,Aston Martin,aston_martin,42,23,88,96,94,95,92,2,5,9
+str,STR,Lance,Stroll,Lance Stroll,Canada,Aston Martin,aston_martin,25,7,82,83,80,85,78,0,5,10
+oca,OCA,Esteban,Ocon,Esteban Ocon,France,Alpine,alpine,28,8,85,86,84,84,87,0,6,11
+gas,GAS,Pierre,Gasly,Pierre Gasly,France,Alpine,alpine,28,8,86,85,86,86,86,0,6,12
+alb,ALB,Alex,Albon,Alex Albon,Thailand,Williams,williams,27,6,84,85,83,85,86,0,7,13
+sar,SAR,Logan,Sargeant,Logan Sargeant,USA,Williams,williams,23,2,78,79,77,80,75,0,7,14
+tss,TSS,Yuki,Tsunoda,Yuki Tsunoda,Japan,RB,rb,24,4,83,82,81,90,80,0,8,15
+had,HAD,Isack,Hadjar,Isack Hadjar,France,RB,rb,20,1,80,80,79,85,78,0,8,16
+ant,ANT,Kimi,Antonelli,Kimi Antonelli,Italy,Sauber,sauber,18,0,82,80,78,85,75,0,9,17
+hur,HUR,Valtteri,Bottas,Valtteri Bottas,Finland,Sauber,sauber,34,13,87,87,88,82,88,0,9,18
+mag,MAG,Kevin,Magnussen,Kevin Magnussen,Denmark,Haas,haas,31,11,82,82,80,88,82,0,10,19
+olo,OLO,Oliver,Bearman,Oliver Bearman,United Kingdom,Haas,haas,20,1,79,78,77,82,76,0,10,20

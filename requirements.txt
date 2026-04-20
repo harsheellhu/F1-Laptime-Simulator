@@ -1,0 +1,29 @@
+# F1 Lap Time Simulator - Scientific Edition
+# Python 3.12+ compatible
+
+# ========== Core Dependencies ==========
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pandas>=2.2.0
+numpy>=2.0.0
+scikit-learn>=1.5.0
+matplotlib>=3.9.0
+seaborn>=0.13.0
+joblib>=1.4.0
+requests>=2.27.0
+pydantic>=2.9.0
+
+# ========== Machine Learning ==========
+xgboost>=2.0.3       # Primary model (XGBoost)
+lightgbm>=4.0.0      # Alternative gradient boosting
+# catboost>=1.2.2    # Optional (requires GPU for speed)
+shap>=0.44.0         # Model explainability
+
+# ========== Visualization & UI ==========
+streamlit>=1.37.0    # Frontend
+plotly>=5.18.0       # Interactive charts
+
+# ========== Utilities ==========
+python-dateutil>=2.8.2
+tqdm>=4.66.0         # Progress bars
+pyarrow>=14.0.0      # Efficient data storage

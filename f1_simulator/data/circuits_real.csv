@@ -1,0 +1,24 @@
+circuitId,name,country,city,length_km,turns,races_since_2000,avg_speed,track_type,elevation_change,drs_zones,pit_loss_s,tire_degradation,overtaking_difficulty,circuitId_num
+bahrain,Bahrain International Circuit,Bahrain,Sakhir,5.412,15,20,high,desert,15,3,18.0,medium,3,1
+jeddah,Jeddah Corniche Circuit,Saudi Arabia,Jeddah,6.174,27,3,very_high,street,12,3,20.0,low,2,2
+albert_park,Albert Park Circuit,Australia,Melbourne,5.278,16,24,medium,street,8,4,19.0,medium,4,3
+suzuka,Suzuka International Racing Course,Japan,Suzuka,5.807,18,34,high,classic,30,3,19.5,medium,5,4
+shanghai,Shanghai International Circuit,China,Shanghai,5.451,16,16,medium,modern,5,3,20.0,high,6,5
+miami,Miami International Autodrome,USA,Miami Gardens,5.412,19,2,medium,street,3,3,18.5,high,4,6
+imola,Autodromo Enzo e Dino Ferrari,Italy,Imola,4.909,19,6,medium,classic,40,2,18.0,medium,6,7
+monaco,Circuit de Monaco,Monaco,Monte Carlo,3.337,19,21,low,street,42,1,23.0,low,9,8
+catalunya,Circuit de Barcelona-Catalunya,Spain,Barcelona,4.675,16,33,medium,modern,25,3,18.5,high,5,9
+montreal,Circuit Gilles Villeneuve,Canada,Montreal,4.361,14,31,medium,street,5,3,17.5,medium,4,10
+spielberg,Red Bull Ring,Austria,Spielberg,4.318,10,24,high,modern,68,3,17.0,low,3,11
+silverstone,Silverstone Circuit,United Kingdom,Silverstone,5.891,18,36,very_high,classic,20,3,19.0,medium,3,12
+hungaroring,Hungaroring,Hungary,Budapest,4.381,14,38,low,technical,18,2,19.0,high,7,13
+spa,Circuit de Spa-Francorchamps,Belgium,Spa,7.004,19,38,very_high,classic,102,3,21.0,medium,3,14
+zandvoort,Circuit Zandvoort,Netherlands,Zandvoort,4.259,14,4,medium,coastal,14,3,17.5,medium,4,15
+monza,Autodromo Nazionale Monza,Italy,Monza,5.793,11,40,very_high,temple,13,3,19.5,low,2,16
+singapore,Marina Bay Street Circuit,Singapore,Singapore,4.94,19,17,low,street,0,3,22.0,low,6,17
+austin,Circuit of the Americas,USA,Austin,5.513,20,10,medium,modern,41,4,19.0,high,4,18
+mexico,Autódromo Hermanos Rodríguez,Mexico,Mexico City,4.304,17,24,medium,high_altitude,18,3,18.0,low,4,19
+interlagos,Interlagos,Brazil,São Paulo,4.309,15,38,medium,classic,107,3,18.5,high,5,20
+yas_marina,Yas Marina Circuit,UAE,Abu Dhabi,5.554,16,13,medium,modern,6,4,19.0,medium,4,21
+vegas,Las Vegas Strip Circuit,USA,Las Vegas,6.201,17,1,high,street,10,3,22.0,low,3,22
+qatar,Losail International Circuit,Qatar,Lusail,5.419,16,1,medium,desert,4,3,18.0,medium,3,23
