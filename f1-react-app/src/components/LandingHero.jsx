@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import ModelViewer from './ModelViewer';
 
 const STAR_COUNT = 120;
 
@@ -141,13 +142,17 @@ export default function LandingHero({ onEnter }) {
           }}
         >
           <span style={{ display: 'block', color: '#ffffff' }}>F1 LAP TIME</span>
-          <span style={{
-            display: 'block',
-            background: 'linear-gradient(135deg, #e8002d 0%, #ff4060 50%, #e8002d 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>SIMULATOR</span>
+          <motion.span 
+            animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
+            transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+            style={{
+              display: 'block',
+              background: 'linear-gradient(90deg, #e8002d 0%, #ff8096 50%, #e8002d 100%)',
+              backgroundSize: '200% auto',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+          }}>SIMULATOR</motion.span>
         </motion.h1>
 
         {/* Subtitle */}
@@ -187,14 +192,14 @@ export default function LandingHero({ onEnter }) {
           ))}
         </motion.div>
 
-        {/* F1 Car SVG */}
+        {/* 3D F1 Car - floating */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.5, duration: 1.2, type: 'spring' }}
-          style={{ marginBottom: 48 }}
+          style={{ marginBottom: 48, width: '120%', marginLeft: '-10%', height: 550 }}
         >
-          <F1CarSVG />
+          <ModelViewer scale={130} />
         </motion.div>
 
         {/* CTA buttons */}
@@ -204,12 +209,59 @@ export default function LandingHero({ onEnter }) {
           transition={{ delay: 1.1 }}
           style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}
         >
-          <button className="btn-primary" onClick={onEnter} style={{ fontSize: '0.8rem', padding: '14px 36px' }}>
+          <motion.button 
+            whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(232,0,45,0.4)" }} 
+            whileTap={{ scale: 0.95 }}
+            className="btn-primary" 
+            onClick={onEnter} 
+            style={{ fontSize: '0.8rem', padding: '14px 36px', overflow: 'hidden', position: 'relative' }}
+          >
             🏁 Launch Simulator
-          </button>
-          <button className="btn-secondary" onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}>
+            <motion.div
+              animate={{ x: ['-200%', '300%'] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut", repeatDelay: 1 }}
+              style={{
+                position: 'absolute', top: 0, left: 0, bottom: 0, width: '40%',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+                transform: 'skewX(-20deg)',
+              }}
+            />
+          </motion.button>
+          <motion.button 
+            whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }} 
+            whileTap={{ scale: 0.95 }}
+            className="btn-secondary" 
+            onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}
+          >
             Learn More ↓
-          </button>
+          </motion.button>
+        </motion.div>
+
+        {/* Credits */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.3 }}
+          style={{
+            marginTop: 48,
+            padding: '12px 24px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: 30,
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(10px)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 12,
+            fontFamily: 'var(--font-ui)',
+            fontSize: '0.8rem',
+            color: 'rgba(255,255,255,0.5)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+          }}
+        >
+          <span>Made by</span>
+          <motion.span whileHover={{ scale: 1.1, color: '#e8002d' }} style={{ color: '#fff', fontWeight: 600, cursor: 'default', transition: 'color 0.2s' }}>Harshil Bhatt</motion.span>
+          <span style={{ opacity: 0.5 }}>&amp;</span>
+          <motion.span whileHover={{ scale: 1.1, color: '#e8002d' }} style={{ color: '#fff', fontWeight: 600, cursor: 'default', transition: 'color 0.2s' }}>Dhruvya Makadia</motion.span>
         </motion.div>
       </div>
 

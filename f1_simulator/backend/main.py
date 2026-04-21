@@ -96,38 +96,43 @@ def _encode_id(encoder_key: str, raw_id: int) -> int:
 def _build_feature_row(
     lap: int, grid: int, total_laps: int,
     circuit_length_km: float, year: int,
-    driver_enc: int, constructor_enc: int, circuit_enc: int,
-) -> np.ndarray:
+    driver_id: int, constructor_id: int, circuit_id: int,
+) -> pd.DataFrame:
     """
-    Build a single-row feature vector.
-
-    Formulae:
-      lap_ratio = lap / total_laps              (normalised progress, 0→1)
-      tire_deg  = 0.6·lap_ratio + 0.4·lap_ratio²  (degradation curves)
-      year_norm = (year - 2010) / 14            (recent-era normalisation)
-      grid_norm = (grid - 1) / 19               (P1=0, P20=1)
+    Build a single-row feature vector to match the trained model features.
     """
-    lap_ratio = lap / max(total_laps, 1)
-    tire_deg  = 0.6 * lap_ratio + 0.4 * lap_ratio ** 2
-    year_norm = (year - 2010) / 14.0
+    lap_ratio = lap / float(total_laps) if total_laps > 0 else 0.0
+    tire_deg = 0.6 * lap_ratio + 0.4 * (lap_ratio**2)
     grid_norm = (max(1, min(grid, 20)) - 1) / 19.0
+    year_norm = (year - 2010) / 14.0
 
-    row = [
-        lap,               # raw lap number
-        lap_ratio,         # normalised lap progress
-        tire_deg,          # tire degradation index
-        grid,              # raw grid position
-        grid_norm,         # normalised grid
-        circuit_length_km, # km per lap
-        year_norm,         # era factor
-        driver_enc,        # label-encoded driver
-        constructor_enc,   # label-encoded constructor
-        circuit_enc,       # label-encoded circuit
+    driver_enc = _encode_id("driver", driver_id)
+    constructor_enc = _encode_id("constructor", constructor_id)
+    circuit_enc = _encode_id("circuit", circuit_id)
+
+    row = {
+        "lap": lap,
+        "lap_ratio": lap_ratio,
+        "tire_deg": tire_deg,
+        "grid": grid,
+        "grid_norm": grid_norm,
+        "circuit_length_km": circuit_length_km,
+        "year_norm": year_norm,
+        "driver_enc": driver_enc,
+        "constructor_enc": constructor_enc,
+        "circuit_enc": circuit_enc,
+    }
+
+    cols = [
+        "lap", "lap_ratio", "tire_deg",
+        "grid", "grid_norm",
+        "circuit_length_km", "year_norm",
+        "driver_enc", "constructor_enc", "circuit_enc"
     ]
-    return np.array(row).reshape(1, -1)
+    return pd.DataFrame([[row[c] for c in cols]], columns=cols)
 
 
-def _predict_time(row: np.ndarray) -> float:
+def _predict_time(row: pd.DataFrame) -> float:
     """Scale features then predict."""
     scaler = _model_bundle["scaler"]
     model  = _model_bundle["model"]
@@ -256,7 +261,7 @@ def get_drivers():
     records = _drivers_df.to_dict(orient="records")
     # Also attach the integer driverIds that exist in the lap_times dataset
     if _encoders:
-        valid_ids = list(_encoders["driver"].classes_)
+        valid_ids = [int(x) for x in _encoders["driver"].classes_]
         return {"drivers": records, "valid_driver_ids": valid_ids}
     return {"drivers": records}
 
@@ -268,7 +273,7 @@ def get_circuits():
         raise HTTPException(503, "Circuit data not loaded")
     records = _circuits_df.to_dict(orient="records")
     if _encoders:
-        valid_ids = list(_encoders["circuit"].classes_)
+        valid_ids = [int(x) for x in _encoders["circuit"].classes_]
         return {"circuits": records, "valid_circuit_ids": valid_ids}
     return {"circuits": records}
 
@@ -291,14 +296,10 @@ def predict(req: PredictRequest):
     """Predict a single lap time using the trained ML model."""
     _require_model()
     try:
-        d_enc = _encode_id("driver",      req.driver_id)
-        c_enc = _encode_id("constructor", req.constructor_id)
-        t_enc = _encode_id("circuit",     req.circuit_id)
-
         row  = _build_feature_row(
             req.lap, req.grid, req.total_laps,
             req.circuit_length_km, req.year,
-            d_enc, c_enc, t_enc,
+            req.driver_id, req.constructor_id, req.circuit_id,
         )
         sec = _predict_time(row)
         return {
@@ -320,10 +321,6 @@ def simulate(req: SimRequest):
     """Simulate a full race — one ML prediction per lap."""
     _require_model()
     try:
-        d_enc = _encode_id("driver",      req.driver_id)
-        c_enc = _encode_id("constructor", req.constructor_id)
-        t_enc = _encode_id("circuit",     req.circuit_id)
-
         PIT_TIME = 22.5  # seconds average pit stop loss
 
         lap_results = []
@@ -331,7 +328,7 @@ def simulate(req: SimRequest):
             row = _build_feature_row(
                 lap_num, req.grid, req.laps,
                 req.circuit_length_km, req.year,
-                d_enc, c_enc, t_enc,
+                req.driver_id, req.constructor_id, req.circuit_id,
             )
             sec = _predict_time(row)
 

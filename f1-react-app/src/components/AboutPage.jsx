@@ -3,13 +3,106 @@ import { motion } from 'framer-motion';
 import { api } from '../api/client';
 
 const FEATURE_DESCRIPTIONS = [
-  { icon: '📐', key: 'lap_ratio',    title: 'Lap Ratio',          formula: 'lap / total_laps',                      color: '#0ea5e9' },
-  { icon: '🛞', key: 'tire_deg',     title: 'Tire Degradation',   formula: '0.6·L + 0.4·L²   (L = lap_ratio)',     color: '#e8002d' },
-  { icon: '🏎', key: 'grid_norm',    title: 'Grid Normalised',    formula: '(grid − 1) / 19',                      color: '#ff8000' },
-  { icon: '📅', key: 'year_norm',    title: 'Year Normalised',    formula: '(year − 2010) / 14',                   color: '#a855f7' },
-  { icon: '🗺', key: 'circuit_len', title: 'Circuit Length (km)', formula: 'raw metres / 1000',                   color: '#00e676' },
-  { icon: '🤖', key: 'driver_enc',   title: 'Driver Encoding',    formula: 'LabelEncoder(driverId)',               color: '#ffd700' },
+  { icon: '📐', key: 'lap_ratio',    title: 'Lap Ratio',          formula: 'lap / total_laps',                      color: '#0ea5e9',  desc: 'Normalizes lap position in race (0-1 scale)' },
+  { icon: '🛞', key: 'tire_deg',     title: 'Tire Degradation',   formula: '0.6·L + 0.4·L²   (L = lap_ratio)',     color: '#e8002d',  desc: 'Polynomial wear curve - more realistic' },
+  { icon: '🏎', key: 'grid_norm',    title: 'Grid Normalised',    formula: '(grid − 1) / 19',                      color: '#ff8000',  desc: 'Pole position = 0, last = 1' },
+  { icon: '📅', key: 'year_norm',    title: 'Year Normalised',    formula: '(year − 2010) / 14',                   color: '#a855f7',  desc: 'Modern era (2010-2024) normalized' },
+  { icon: '🗺', key: 'circuit_len', title: 'Circuit Length (km)', formula: 'metres / 1000',                         color: '#00e676',  desc: 'Convert circuit length to km' },
+  { icon: '🤖', key: 'driver_enc',   title: 'Driver Encoding',    formula: 'LabelEncoder(driverId)',               color: '#ffd700',  desc: 'Map driver IDs to integers' },
 ];
+
+const FORMULA_CARDS = [
+  {
+    title: 'Fuel Load Effect',
+    formula: 'fuel_effect = (1 - fuel_norm) × 0.4',
+    desc: 'Cars burn ~1.6kg fuel/lap. Lighter = faster! Up to 0.4s improvement.',
+    icon: '⛽',
+    color: '#00e676'
+  },
+  {
+    title: 'Track Evolution',
+    formula: 'track_evol = min(lap × 0.02, 0.3)',
+    desc: 'Track "rubbers in" over laps - up to 0.3s faster.',
+    icon: '✨',
+    color: '#a855f7'
+  },
+  {
+    title: 'Composite Team Score',
+    formula: 'team_perf = (0.3P + 0.4A + 0.15L + 0.15H) / 100',
+    desc: 'Power(30%) + Aero(40%) + Low/High speed combo.',
+    icon: '🏎️',
+    color: '#e8002d'
+  },
+  {
+    title: 'Weather Impact',
+    formula: 'wet_multiplier = 1.0 to 1.15',
+    desc: 'Rain slows cars 0-15%. Wet skill matters!',
+    icon: '🌧️',
+    color: '#0ea5e9'
+  },
+  {
+    title: 'Experience Factor',
+    formula: 'exp_factor = ln(1+exp) / ln(21)',
+    desc: 'Log scale - early years count more!',
+    icon: '📈',
+    color: '#ff8000'
+  },
+  {
+    title: 'Age Performance',
+    formula: 'age_factor = max(0.8, 1 - |age-29|/100)',
+    desc: 'Peak at 29yo. +/- 1% per year away.',
+    icon: '🎂',
+    color: '#ffd700'
+  },
+];
+
+const TerminalTypewriter = ({ text }) => {
+  return (
+    <motion.div
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: '-20%' }}
+      variants={{
+        visible: { transition: { staggerChildren: 0.015 } }
+      }}
+      style={{
+        fontFamily: 'monospace',
+        fontSize: '0.88rem',
+        color: 'rgba(255,255,255,0.85)',
+        textAlign: 'left',
+        background: '#040206',
+        padding: '24px 28px',
+        borderRadius: '12px',
+        border: '1px solid rgba(232,0,45,0.2)',
+        boxShadow: 'inset 0 0 30px rgba(0,0,0,0.8), 0 16px 40px rgba(0,0,0,0.5)',
+        maxWidth: 780,
+        margin: '0 auto',
+        lineHeight: 1.65,
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+    >
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:'linear-gradient(90deg, var(--red), transparent)' }} />
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <div style={{ width:10, height:10, borderRadius:'50%', background:'#ff5f56' }} />
+        <div style={{ width:10, height:10, borderRadius:'50%', background:'#ffbd2e' }} />
+        <div style={{ width:10, height:10, borderRadius:'50%', background:'#27c93f' }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <span style={{ color: 'var(--green)' }}>strategy_env@pitwall</span>
+        <span style={{ color: 'var(--text-3)' }}>:~/telemetry-models$</span> ./execute_xgboost.sh --explain
+      </div>
+      <div style={{ color: '#a0aab5' }}>
+        {text.split("").map((char, i) => (
+          <motion.span key={i} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}>
+            {char}
+          </motion.span>
+        ))}
+        <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} style={{ display: 'inline-block', width: 8, height: 16, background: 'var(--red)', verticalAlign: 'middle', marginLeft: 6 }}/>
+      </div>
+    </motion.div>
+  );
+};
 
 export default function AboutPage({ onLaunch }) {
   const [modelInfo, setModelInfo]   = useState(null);
@@ -61,10 +154,8 @@ export default function AboutPage({ onLaunch }) {
       <section style={{ maxWidth:1200, margin:'0 auto', padding:'60px 24px' }}>
         <motion.div {...fadeUp()} style={{ textAlign:'center', marginBottom:56 }}>
           <div className="divider-red" style={{ margin:'0 auto 12px' }} />
-          <h2 className="heading-lg" style={{ marginBottom:10 }}>HOW IT WORKS</h2>
-          <p style={{ color:'var(--text-2)', fontFamily:'var(--font-body)', maxWidth:520, margin:'0 auto' }}>
-            This simulator uses a machine learning model trained on over 120,000 real Formula 1 lap times sourced from the Ergast Motor Racing API dataset.
-          </p>
+          <h2 className="heading-lg" style={{ marginBottom:28 }}>WHY XGBOOST IS THE PINNACLE</h2>
+          <TerminalTypewriter text="Neural networks often overfit tabular data, and linear models fail to capture complex physical interactions. F1 racing relies on highly non-linear dynamics—like the exact moment tire grip falls off a cliff or how fuel weight dynamically interacts with track evolution. By layering 400 gradient-boosted decision trees over 120,000 real historical lap records, our XGBoost architecture isolates these non-linear physics natively without hallucinating. It's the ultimate algorithmic strategy engine." />
         </motion.div>
 
         {/* Feature cards */}
@@ -94,25 +185,91 @@ export default function AboutPage({ onLaunch }) {
           ))}
         </div>
 
-        {/* Feature engineering formulae */}
+        {/* Feature engineering formulae - SEXY GLASSMORPHISM EDITION */}
         <motion.div {...fadeUp(0.2)} style={{ marginBottom:56 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
             <div className="divider-red" />
             <h3 style={{ fontFamily:'var(--font-display)', fontSize:'0.9rem', fontWeight:700, letterSpacing:'0.08em' }}>
               FEATURE ENGINEERING FORMULAE
             </h3>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:12 }}>
-            {FEATURE_DESCRIPTIONS.map(f => (
-              <div key={f.key} className="glass-dark" style={{ padding:'16px 18px' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-                  <span style={{ fontSize:'1.2rem' }}>{f.icon}</span>
-                  <span style={{ fontFamily:'var(--font-display)', fontSize:'0.7rem', fontWeight:700, color:f.color }}>{f.title}</span>
+          
+          {/* Main formulae cards with glass effect */}
+          <div style={{ 
+            display:'grid', 
+            gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', 
+            gap:16,
+            marginBottom: 24
+          }}>
+            {FORMULA_CARDS.map((f, i) => (
+              <motion.div 
+                key={f.title} 
+                {...fadeUp(i * 0.06)}
+                className="glass"
+                style={{ 
+                  padding: '20px 24px',
+                  borderLeft: `3px solid ${f.color}`,
+                  background: `linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(${f.color.split('').map(c => parseInt(c, 16)).join(',')},0.05) 100%)`,
+                }}
+                whileHover={{ 
+                  scale: 1.02, 
+                  boxShadow: `0 20px 60px ${f.color}33`,
+                  borderLeftWidth: '4px'
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                  <span style={{ fontSize:'1.6rem' }}>{f.icon}</span>
+                  <span style={{ 
+                    fontFamily:'var(--font-display)', 
+                    fontSize:'0.75rem', 
+                    fontWeight:700, 
+                    color:f.color,
+                    textTransform:'uppercase',
+                    letterSpacing:'0.1em'
+                  }}>{f.title}</span>
                 </div>
                 <code style={{
-                  display:'block', fontFamily:'monospace', fontSize:'0.78rem',
-                  background:'rgba(0,0,0,0.35)', borderRadius:6, padding:'8px 12px',
-                  color:'rgba(255,255,255,0.8)', border:'1px solid rgba(255,255,255,0.06)',
+                  display:'block', 
+                  fontFamily:'monospace', 
+                  fontSize:'0.85rem',
+                  background:'rgba(0,0,0,0.4)', 
+                  borderRadius:8, 
+                  padding:'12px 16px',
+                  color:'rgba(255,255,255,0.95)', 
+                  border:`1px solid ${f.color}44`,
+                  marginBottom: 10,
+                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.1)`
+                }}>{f.formula}</code>
+                <p style={{ 
+                  fontFamily:'var(--font-ui)', 
+                  fontSize:'0.72rem', 
+                  color:'var(--text-2)',
+                  lineHeight:1.5 
+                }}>{f.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+          
+          {/* Simple feature cards row */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12 }}>
+            {FEATURE_DESCRIPTIONS.map(f => (
+              <div key={f.key} className="glass" style={{ 
+                padding:'14px 16px',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.005) 100%)',
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <span style={{ fontSize:'1rem' }}>{f.icon}</span>
+                  <span style={{ fontFamily:'var(--font-display)', fontSize:'0.65rem', fontWeight:700, color:f.color }}>{f.title}</span>
+                </div>
+                <code style={{
+                  display:'block', 
+                  fontFamily:'monospace', 
+                  fontSize:'0.7rem',
+                  background:'rgba(0,0,0,0.35)', 
+                  borderRadius:4, 
+                  padding:'6px 10px',
+                  color:'rgba(255,255,255,0.75)',
                 }}>{f.formula}</code>
               </div>
             ))}

@@ -62,6 +62,14 @@ body {
   border-radius: var(--radius-md);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  transition: all 0.3s ease;
+}
+
+.glass:hover {
+  background: rgba(255,255,255,0.08);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.4), 0 0 20px rgba(232,0,45,0.1);
+  transform: translateY(-2px);
 }
 
 .glass-red {
@@ -76,6 +84,45 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   backdrop-filter: blur(12px);
+}
+
+/* ── Formula card glows ──────────────────────────────────── */
+.glass-formula {
+  background: linear-gradient(135deg, 
+    rgba(255,255,255,0.04) 0%, 
+    rgba(255,255,255,0.01) 100%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 3px solid var(--red);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 
+    0 4px 24px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-formula:hover {
+  transform: scale(1.02) translateY(-4px);
+  box-shadow: 
+    0 20px 60px rgba(0,0,0,0.4),
+    0 0 40px rgba(232,0,45,0.15),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+  border-left-width: 4px;
+}
+
+.glass-formula::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255,255,255,0.15) 50%, 
+    transparent 100%);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 /* ── Buttons ────────────────────────────────────────────── */
@@ -156,6 +203,56 @@ body {
   background-clip: text;
 }
 
+/* ── Animated gradient background for cards ───────────── */
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.gradient-animate {
+  background: linear-gradient(-45deg, 
+    rgba(232,0,45,0.1) 0%, 
+    rgba(14,165,233,0.1) 25%, 
+    rgba(168,85,247,0.1) 50%,
+    rgba(232,0,45,0.1) 100%);
+  background-size: 400% 400%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+/* ── Glow effects ─────────────────────────────────────── */
+.glow-red {
+  box-shadow: 0 0 20px rgba(232,0,45,0.3), 0 0 40px rgba(232,0,45,0.1);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(14,165,233,0.3), 0 0 40px rgba(14,165,233,0.1);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(0,230,118,0.3), 0 0 40px rgba(0,230,118,0.1);
+}
+
+/* ── Shimmer effect on hover ─────────────────────────────── */
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+.shimmer-hover:hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255,255,255,0.15) 50%, 
+    transparent 100%);
+  animation: shimmer 1.5s ease-in-out;
+}
+
 /* ── Utility ────────────────────────────────────────────── */
 .divider-red { width:48px; height:3px; background:linear-gradient(90deg,var(--red),transparent); border-radius:2px; }
 
@@ -219,4 +316,21 @@ input[type=range]::-webkit-slider-thumb {
   overflow:hidden;
   border:1px solid var(--glass-border);
   background:var(--bg-deep);
+}
+
+/* ── 3D Model container ─────────────────────────────── */
+.glow-container {
+  background: linear-gradient(135deg, 
+    rgba(232,0,45,0.08) 0%, 
+    rgba(14,165,233,0.04) 50%, 
+    rgba(168,85,247,0.04) 100%);
+  border: 1px solid rgba(232,0,45,0.2);
+  border-radius: var(--radius-lg);
+  box-shadow: 
+    0 0 60px rgba(232,0,45,0.15),
+    inset 0 0 60px rgba(0,0,0,0.3);
+}
+
+.glow-container canvas {
+  animation: float 3s ease-in-out infinite;
 }

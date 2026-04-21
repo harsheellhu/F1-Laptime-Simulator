@@ -97,3 +97,46 @@ with col2:
         st.metric("Test MAE", f"{model_info.get('test_mae', 0):.3f}s")
         st.metric("Test R²", f"{model_info.get('test_r2', 0):.4f}")
         st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================
+# STARTUP INSTRUCTIONS
+# ============================================
+st.divider()
+st.header("🚀 Quick Start")
+
+with st.expander("How to Run the F1 Simulator", expanded=True):
+    st.markdown("""
+    ### Option 1: Streamlit App (Recommended)
+    ```bash
+    streamlit run f1_simulator/app.py
+    ```
+    Or with uvicorn:
+    ```bash
+    uvicorn f1_simulator.app:starlet --reload --port 8501
+    ```
+    
+    ### Option 2: Advanced Scientific Edition
+    ```bash
+    streamlit run f1_simulator/frontend/app_advanced.py
+    ```
+    
+    ### Option 3: API + React Frontend
+    ```bash
+    # Terminal 1 - Start FastAPI
+    uvicorn f1_simulator.backend.main:app --reload --port 8000
+    
+    # Terminal 2 - Start React
+    cd f1-react-app && npm run dev
+    ```
+    
+    ### API Endpoints
+    | Endpoint | Description |
+    |----------|------------|
+    | GET /predict | Single lap time |
+    | POST /simulate | Full race simulation |
+    | GET /model-info | Model metrics |
+    | GET /formulae | ML formulae |
+    | GET /drivers | Driver list |
+    | GET /circuits | Circuit list |
+    | GET /constructors | Team list |
+    """)

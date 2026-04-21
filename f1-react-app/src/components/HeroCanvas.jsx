@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import ModelViewer from './ModelViewer';
 
-/** Starfield + speed-line animated canvas hero */
+/** Starfield + speed-line animated canvas hero with 3D car */
 export default function HeroCanvas({ onLaunch }) {
   const ref = useRef(null);
   const raf = useRef(null);
@@ -102,9 +103,49 @@ export default function HeroCanvas({ onLaunch }) {
         </motion.div>
 
         {/* Title */}
-        <motion.h1 className="heading-xl" {...fadeUp(0.25)} style={{ marginBottom:20 }}>
-          <span style={{ display:'block', color:'#fff' }}>F1 LAP TIME</span>
-          <span className="grad-red" style={{ display:'block' }}>SIMULATOR</span>
+        <motion.h1 
+          className="heading-xl" 
+          style={{ marginBottom:20 }}
+          variants={{
+            hidden: { opacity: 0 },
+            show: { opacity: 1, transition: { staggerChildren: 0.04, delayChildren: 0.2 } }
+          }}
+          initial="hidden"
+          animate="show"
+        >
+          <span style={{ display:'block', color:'#fff', perspective: 1000 }}>
+            {Array.from("F1 LAP TIME").map((char, i) => (
+              <motion.span
+                key={i}
+                variants={{
+                  hidden: { opacity: 0, x: 100, skewX: -30, scaleX: 1.5, filter: 'blur(8px)' },
+                  show: { opacity: 1, x: 0, skewX: 0, scaleX: 1, filter: 'blur(0px)', transition: { type: 'spring', damping: 15, stiffness: 300 } }
+                }}
+                style={{ display: 'inline-block', whiteSpace: 'pre' }}
+              >
+                {char}
+              </motion.span>
+            ))}
+          </span>
+          <motion.span 
+            style={{
+              display: 'block',
+              color: '#e8002d',
+              textShadow: '0 0 30px rgba(232,0,45,0.4)',
+          }}>
+            {Array.from("SIMULATOR").map((char, i) => (
+              <motion.span
+                key={i}
+                variants={{
+                  hidden: { opacity: 0, x: 100, skewX: -40, scaleX: 2, filter: 'blur(10px)' },
+                  show: { opacity: 1, x: 0, skewX: 0, scaleX: 1, filter: 'blur(0px)', transition: { type: 'spring', damping: 12, stiffness: 250 } }
+                }}
+                style={{ display: 'inline-block', whiteSpace: 'pre' }}
+              >
+                {char}
+              </motion.span>
+            ))}
+          </motion.span>
         </motion.h1>
 
         {/* Sub */}
@@ -130,23 +171,76 @@ export default function HeroCanvas({ onLaunch }) {
           ))}
         </motion.div>
 
-        {/* Floating F1 car */}
+{/* Floating 3D F1 car */}
         <motion.div
           animate={{ y: [-5, 5, -5] }}
           transition={{ repeat:Infinity, duration:3.2, ease:'easeInOut' }}
-          style={{ marginBottom:36 }}
+          style={{ 
+            marginBottom: 36, 
+            width: '120%', 
+            marginLeft: '-10%',
+            height: 500,
+            position: 'relative',
+          }}
         >
-          <F1CarSVG />
+          <ModelViewer scale={120} />
         </motion.div>
 
         {/* CTAs */}
         <motion.div {...fadeUp(0.9)} style={{ display:'flex', gap:14, justifyContent:'center', flexWrap:'wrap' }}>
-          <button className="btn-primary" onClick={onLaunch} style={{ padding:'14px 40px', fontSize:'0.78rem' }}>
+          <motion.button 
+            whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(232,0,45,0.4)" }} 
+            whileTap={{ scale: 0.95 }}
+            className="btn-primary" 
+            onClick={onLaunch} 
+            style={{ fontSize: '0.78rem', padding: '14px 40px', overflow: 'hidden', position: 'relative' }}
+          >
             🏁 Launch Simulator
-          </button>
-          <button className="btn-ghost" onClick={() => document.getElementById('about')?.scrollIntoView({behavior:'smooth'})}>
+            <motion.div
+              animate={{ x: ['-200%', '300%'] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut", repeatDelay: 1 }}
+              style={{
+                position: 'absolute', top: 0, left: 0, bottom: 0, width: '40%',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+                transform: 'skewX(-20deg)',
+              }}
+            />
+          </motion.button>
+          <motion.button 
+            whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }} 
+            whileTap={{ scale: 0.95 }}
+            className="btn-ghost" 
+            onClick={() => document.getElementById('about')?.scrollIntoView({behavior:'smooth'})}
+          >
             Learn More ↓
-          </button>
+          </motion.button>
+        </motion.div>
+
+        {/* Credits */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.1 }}
+          style={{
+            marginTop: 48,
+            padding: '12px 24px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: 30,
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(10px)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 12,
+            fontFamily: 'var(--font-ui)',
+            fontSize: '0.8rem',
+            color: 'rgba(255,255,255,0.5)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+          }}
+        >
+          <span>Made by</span>
+          <motion.span whileHover={{ scale: 1.1, color: '#e8002d' }} style={{ color: '#fff', fontWeight: 600, cursor: 'default', transition: 'color 0.2s' }}>Harshil Bhatt</motion.span>
+          <span style={{ opacity: 0.5 }}>&amp;</span>
+          <motion.span whileHover={{ scale: 1.1, color: '#e8002d' }} style={{ color: '#fff', fontWeight: 600, cursor: 'default', transition: 'color 0.2s' }}>Dhruvya Makadia</motion.span>
         </motion.div>
       </div>
 

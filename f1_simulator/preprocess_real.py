@@ -35,7 +35,10 @@ def main():
         circs = pd.read_csv(DATA_DIR / "circuits.csv")[["circuitId","length"]]
 
         print("[6/8] Merging & Filtering data...", flush=True)
-        df = lap.merge(races, on="raceId", how="inner")
+        df = lap.merge(races, on="raceId", how="inner", suffixes=('', '_race'))
+        # Keep the original circuitId from lap_times (circuitId), drop the duplicate from races
+        if 'circuitId_race' in df.columns:
+            df = df.drop(columns=['circuitId_race'])
         df = df.merge(circs, on="circuitId", how="left")
         
         df["lap_time_sec"] = df["milliseconds"] / 1000.0
@@ -93,7 +96,7 @@ def main():
         print("\n✅ PREPROCESSING COMPLETELY FINISHED!")
 
     except Exception as e:
-        print(f"\n❌ ERROR CRASH IN PREPROCESSING: {e}")
+        print(f"\n[X] ERROR CRASH IN PREPROCESSING: {e}")
 
 if __name__ == "__main__":
     main()

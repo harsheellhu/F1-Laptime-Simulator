@@ -255,22 +255,20 @@ export default function Simulator({ onBack }) {
 // SETUP PANEL
 // ═══════════════════════════════════════════════════
 function SetupPanel({ cfg, upd, drivers, circuits, constructors, selectedDriver, selectedCircuit, selectedConstr, apiOnline, onStart }) {
-  const pitOpts = [null, ...Array.from({length:Math.floor(cfg.laps*0.8)},(_,i)=>i+3)];
-
   return (
     <div>
-      <div style={{ marginBottom:28 }}>
-        <div className="divider-red" style={{ marginBottom:10 }} />
-        <h2 className="heading-lg">RACE CONFIGURATION</h2>
-        <p style={{ color:'var(--text-3)', fontFamily:'var(--font-ui)', marginTop:6 }}>
-          All parameters feed directly into the real ML model.
+      <div style={{ marginBottom:32 }}>
+        <div className="divider-red" style={{ marginBottom:14 }} />
+        <h2 className="heading-lg" style={{ letterSpacing: '0.05em' }}>RACE CONFIGURATION</h2>
+        <p style={{ color:'var(--text-3)', fontFamily:'var(--font-ui)', marginTop:8, fontSize: '0.9rem' }}>
+          Select parameters to feed into the XGBoost engine.
         </p>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 340px', gap:20 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 340px', gap:24 }}>
         {/* Left col */}
-        <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
-          <GlassCard title="🏎 DRIVER" sub="Select from real 2024 grid">
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          <GlassCard title="DRIVER" sub="Select from real 2024 grid" delay={0.1}>
             <select className="f1-select" value={cfg.driver_id ?? ''} onChange={e=>upd('driver_id',Number(e.target.value))}>
               <option value="">-- Select Driver --</option>
               {drivers.map(d => (
@@ -280,91 +278,97 @@ function SetupPanel({ cfg, upd, drivers, circuits, constructors, selectedDriver,
               ))}
             </select>
             {selectedDriver && (
-              <div style={{ marginTop:14, padding:'14px 16px', background:'rgba(255,255,255,0.04)',
-                border:'1px solid var(--glass-border)', borderRadius:'var(--radius-sm)',
-                display:'flex', alignItems:'center', gap:14 }}>
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                style={{ marginTop:16, padding:'16px', background:'rgba(255,255,255,0.03)',
+                border:'1px solid var(--glass-border)', borderRadius:'12px',
+                display:'flex', alignItems:'center', gap:16, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5)' }}>
                 <div style={{
-                  width:44, height:44, borderRadius:10, background:'var(--red)',
+                  width:48, height:48, borderRadius:12, background:'linear-gradient(135deg, var(--red), #800018)',
                   display:'flex', alignItems:'center', justifyContent:'center',
-                  fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.1rem',
+                  fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.2rem',
+                  boxShadow:'0 4px 12px rgba(232,0,45,0.4)', border: '1px solid #ff4d6d'
                 }}>{selectedDriver.race_skill || '?'}</div>
                 <div>
-                  <div style={{ fontFamily:'var(--font-display)', fontSize:'0.9rem', fontWeight:700 }}>{selectedDriver.fullName}</div>
-                  <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.72rem', color:'var(--text-3)', marginTop:3 }}>
+                  <div style={{ fontFamily:'var(--font-display)', fontSize:'1rem', fontWeight:800 }}>{selectedDriver.fullName}</div>
+                  <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-3)', marginTop:4 }}>
                     {selectedDriver.team} · {selectedDriver.nationality}
-                    {selectedDriver.championships > 0 && ` · ${selectedDriver.championships}× WDC 🏆`}
                   </div>
-                  <div style={{ display:'flex', gap:8, marginTop:6 }}>
+                  <div style={{ display:'flex', gap:12, marginTop:8 }}>
                     {[['Race',selectedDriver.race_skill],['Qual',selectedDriver.qualifying_skill],['Wet',selectedDriver.wet_skill]].map(([l,v])=>(
-                      <div key={l} style={{ textAlign:'center' }}>
-                        <div style={{ fontFamily:'var(--font-display)', fontSize:'0.85rem', fontWeight:700, color:'var(--red)' }}>{v}</div>
-                        <div className="label">{l}</div>
+                      <div key={l} style={{ textAlign:'center', background: 'rgba(0,0,0,0.3)', padding: '4px 10px', borderRadius: 6 }}>
+                        <div style={{ fontFamily:'Orbitron, monospace', fontSize:'0.85rem', fontWeight:700, color:'var(--red)' }}>{v}</div>
+                        <div className="label" style={{ fontSize: '0.55rem' }}>{l}</div>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
           </GlassCard>
 
-          <GlassCard title="🔧 CONSTRUCTOR" sub="Select team">
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
-              {constructors.map(c => (
+          <GlassCard title="CONSTRUCTOR" sub="Select team" delay={0.2}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 }}>
+              {constructors.map(c => {
+                const isSel = cfg.constructor_id===c.constructorId_num;
+                return (
                 <button key={c.constructorId_num}
                   onClick={() => upd('constructor_id', c.constructorId_num)}
                   style={{
-                    fontFamily:'var(--font-ui)', fontSize:'0.78rem', fontWeight:600,
-                    padding:'10px', borderRadius:'var(--radius-sm)', cursor:'pointer',
-                    border:`1px solid ${cfg.constructor_id===c.constructorId_num ? '#e8002d' : 'var(--glass-border)'}`,
-                    background: cfg.constructor_id===c.constructorId_num ? 'var(--red-glass)' : 'var(--glass-3)',
-                    color: cfg.constructor_id===c.constructorId_num ? 'var(--red)' : 'var(--text-2)',
-                    transition:'all 0.18s',
+                    fontFamily:'var(--font-ui)', fontSize:'0.78rem', fontWeight:700,
+                    padding:'12px', borderRadius:'8px', cursor:'pointer',
+                    border:`1px solid ${isSel ? '#e8002d' : 'rgba(255,255,255,0.05)'}`,
+                    background: isSel ? 'rgba(232,0,45,0.15)' : 'rgba(0,0,0,0.3)',
+                    color: isSel ? '#fff' : 'var(--text-3)',
+                    boxShadow: isSel ? 'inset 0 0 12px rgba(232,0,45,0.3), 0 0 10px rgba(232,0,45,0.2)' : 'none',
+                    transition:'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}>
                   {c.name}
                 </button>
-              ))}
+              )})}
             </div>
           </GlassCard>
         </div>
 
         {/* Centre col */}
-        <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
-          <GlassCard title="📍 CIRCUIT" sub="Select from real F1 calendar">
-            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:320, overflowY:'auto' }}>
-              {circuits.map(c => (
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          <GlassCard title="CIRCUIT" sub="Select from real F1 calendar" delay={0.3}>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:400, overflowY:'auto', paddingRight: 4 }}>
+              {circuits.map(c => {
+                const isSel = cfg.circuit_id===c.circuitId_num;
+                return (
                 <button key={c.circuitId_num}
                   onClick={() => upd('circuit_id', c.circuitId_num)}
                   style={{
-                    fontFamily:'var(--font-ui)', fontSize:'0.8rem', fontWeight: cfg.circuit_id===c.circuitId_num?600:400,
-                    padding:'10px 14px', borderRadius:'var(--radius-sm)', textAlign:'left', cursor:'pointer',
-                    border:`1px solid ${cfg.circuit_id===c.circuitId_num?'var(--red)':'rgba(255,255,255,0.05)'}`,
-                    background: cfg.circuit_id===c.circuitId_num?'var(--red-glass)':'var(--glass-3)',
-                    color: cfg.circuit_id===c.circuitId_num?'var(--red)':'var(--text-2)',
-                    transition:'all 0.18s',
-                    display:'flex', justifyContent:'space-between',
+                    fontFamily:'var(--font-ui)', fontSize:'0.85rem', fontWeight: isSel?700:500,
+                    padding:'12px 16px', borderRadius:'8px', textAlign:'left', cursor:'pointer',
+                    border:`1px solid ${isSel?'var(--red)':'rgba(255,255,255,0.04)'}`,
+                    background: isSel?'linear-gradient(90deg, rgba(232,0,45,0.2), rgba(232,0,45,0.05))':'rgba(0,0,0,0.25)',
+                    color: isSel?'#fff':'var(--text-2)',
+                    transition:'all 0.2s',
+                    display:'flex', justifyContent:'space-between', alignItems: 'center'
                   }}>
-                  <span>{c.country} · {c.name}</span>
-                  <span style={{ color:'var(--text-3)', fontSize:'0.68rem' }}>{c.length_km}km</span>
+                  <span>{c.country} <span style={{ opacity: 0.5, margin: '0 6px' }}>|</span> {c.name}</span>
+                  <span style={{ color:isSel?'var(--red)':'var(--text-4)', fontFamily: 'Orbitron, monospace', fontSize:'0.7rem' }}>{c.length_km}km</span>
                 </button>
-              ))}
+              )})}
             </div>
           </GlassCard>
         </div>
 
         {/* Right col — params + launch */}
-        <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
-          <GlassCard title="⚙️ PARAMETERS" sub="Race settings">
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          <GlassCard title="PARAMETERS" sub="Race settings" delay={0.4}>
             <SliderRow label="Grid Position"  val={cfg.grid}  min={1}  max={20} unit={`P${cfg.grid}`}  onChange={v=>upd('grid',v)} />
-            <SliderRow label="Number of Laps" val={cfg.laps}  min={5}  max={70} unit={`${cfg.laps} laps`} onChange={v=>upd('laps',v)} style={{marginTop:18}} />
-            <SliderRow label="Race Year"      val={cfg.year}  min={2010} max={2023} unit={cfg.year} onChange={v=>upd('year',v)} style={{marginTop:18}} />
+            <SliderRow label="Number of Laps" val={cfg.laps}  min={5}  max={70} unit={`${cfg.laps}`} onChange={v=>upd('laps',v)} style={{marginTop:24}} />
+            <SliderRow label="Race Year"      val={cfg.year}  min={2010} max={2024} unit={cfg.year} onChange={v=>upd('year',v)} style={{marginTop:24}} />
           </GlassCard>
 
-          <GlassCard title="🔧 PIT STOP STRATEGY" sub="Optional — leave blank for no stops">
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <GlassCard title="PIT STRATEGY" sub="Optional — leave blank for no stops" delay={0.5}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
               {[['pit_lap_1','Stop 1'],['pit_lap_2','Stop 2']].map(([key,label])=>(
                 <div key={key}>
-                  <div className="label" style={{ marginBottom:6 }}>{label}</div>
-                  <select className="f1-select" value={cfg[key]??''} onChange={e=>upd(key,e.target.value?Number(e.target.value):null)}>
+                  <div className="label" style={{ marginBottom:8 }}>{label}</div>
+                  <select className="f1-select" style={{ padding: '10px' }} value={cfg[key]??''} onChange={e=>upd(key,e.target.value?Number(e.target.value):null)}>
                     <option value="">No stop</option>
                     {Array.from({length:cfg.laps-4},(_,i)=>i+3).map(l=>(
                       <option key={l} value={l}>Lap {l}</option>
@@ -373,34 +377,38 @@ function SetupPanel({ cfg, upd, drivers, circuits, constructors, selectedDriver,
                 </div>
               ))}
             </div>
-            <div style={{ marginTop:10, fontFamily:'var(--font-ui)', fontSize:'0.72rem', color:'var(--text-3)' }}>
-              Pit stop adds {PIT_LOSS_SEC}s time loss per stop
-            </div>
           </GlassCard>
 
           {/* Summary + launch */}
-          <div className="glass-red" style={{ padding:20 }}>
-            <div className="label" style={{ color:'var(--red)', marginBottom:14 }}>LAUNCH SUMMARY</div>
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
+            className="glass-red" style={{ padding: 24, boxShadow: '0 10px 40px rgba(232,0,45,0.15)' }}>
+            <div className="label" style={{ color:'var(--red)', marginBottom:16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)', animation: 'pulse-red 2s infinite' }} />
+              LAUNCH SEQUENCE
+            </div>
             {[
               ['Driver',     selectedDriver?.fullName || '—'],
               ['Team',       selectedConstr?.name || '—'],
               ['Circuit',    selectedCircuit?.name || '—'],
               ['Laps',       cfg.laps],
-              ['Grid',       `P${cfg.grid}`],
-              ['Year',       cfg.year],
-              ['Pit Stops',  [cfg.pit_lap_1,cfg.pit_lap_2].filter(Boolean).map(l=>`L${l}`).join(', ')||'None'],
             ].map(([k,v])=>(
-              <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
+              <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
                 <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-3)' }}>{k}</span>
-                <span style={{ fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:600 }}>{v}</span>
+                <span style={{ fontFamily:'var(--font-display)', fontSize:'0.8rem', fontWeight:700 }}>{v}</span>
               </div>
             ))}
-            <button className="btn-primary" onClick={onStart}
+            
+            <motion.button 
+              whileHover={apiOnline ? { scale: 1.03, boxShadow: '0 0 30px rgba(232,0,45,0.6)' } : {}}
+              whileTap={apiOnline ? { scale: 0.97 } : {}}
+              className="btn-primary" 
+              onClick={onStart}
               disabled={!apiOnline || !cfg.driver_id || !cfg.circuit_id}
-              style={{ width:'100%', marginTop:18, padding:14 }}>
-              {apiOnline ? '🏁 Start Simulation' : '⚠️ Backend Offline'}
-            </button>
-          </div>
+              style={{ width:'100%', marginTop:24, padding:'16px', fontSize: '0.9rem', letterSpacing: '0.05em' }}
+            >
+              {apiOnline ? '🚀 INITIATE SIMULATION' : '⚠️ BACKEND OFFLINE'}
+            </motion.button>
+          </motion.div>
         </div>
       </div>
     </div>
@@ -414,8 +422,8 @@ function LivePanel({ simState, cfg, chartData, fastestObj, selectedCircuit, carC
   const pct = simState.currentLap / cfg.laps * 100;
   return (
     <div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:18, marginBottom:18 }}>
-        <div style={{ height:420 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:24, marginBottom:24 }}>
+        <div style={{ height:460, borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5)' }}>
           <TrackView
             circuitId={selectedCircuit?.circuitId_num || 1}
             isRunning={simState.running}
@@ -426,85 +434,102 @@ function LivePanel({ simState, cfg, chartData, fastestObj, selectedCircuit, carC
           />
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* LIVE Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', marginBottom: 4 }}>
+            <div className="label" style={{ color:'var(--text-4)' }}>TELEMETRY FEED</div>
+            {simState.running ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff0033', animation: 'pulse-red 1s infinite' }} />
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.65rem', color: '#ff0033', letterSpacing: '0.1em' }}>LIVE</span>
+              </div>
+            ) : (
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.65rem', color: 'var(--text-4)', letterSpacing: '0.1em' }}>FINISHED</div>
+            )}
+          </div>
+
           {[
             {k:'CURRENT LAP', v:`${simState.currentLap} / ${cfg.laps}`, c:'#fff'},
             {k:'LAST LAP',    v:formatTime(simState.currentTime), c:'#fff'},
             {k:'FASTEST LAP', v:formatTime(simState.fastestLap),  c:'var(--gold)', sub:`Lap ${fastestObj?.lap||'—'}`},
             {k:'AVG LAP',     v:formatTime(simState.avgTime),     c:'var(--text-2)'},
             {k:'TOTAL TIME',  v:formatTime(simState.totalTime),   c:'var(--text-2)'},
-          ].map(s=>(
-            <div key={s.k} className="glass" style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div className="label">{s.k}</div>
+          ].map((s, i)=>(
+            <motion.div key={s.k} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }} 
+              className="glass" style={{ padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderLeft: `3px solid ${s.c === '#fff' ? 'rgba(255,255,255,0.2)' : s.c}` }}>
+              <div className="label" style={{ color: 'var(--text-3)' }}>{s.k}</div>
               <div>
-                <div style={{ fontFamily:'var(--font-display)', fontSize:'0.95rem', fontWeight:700, color:s.c, textAlign:'right' }}>{s.v}</div>
-                {s.sub && <div className="label" style={{ textAlign:'right' }}>{s.sub}</div>}
+                <div style={{ fontFamily:'Orbitron, monospace', fontSize:'1.15rem', fontWeight:700, color:s.c, textAlign:'right', textShadow: s.c !== '#fff' ? `0 0 12px ${s.c}66` : 'none' }}>{s.v}</div>
+                {s.sub && <div style={{ fontFamily: 'Orbitron, monospace', fontSize: '0.6rem', color: 'var(--text-4)', textAlign:'right', marginTop: 4 }}>{s.sub}</div>}
               </div>
-            </div>
+            </motion.div>
           ))}
 
           {/* Pit stops */}
-          <div className="glass" style={{ padding:'12px 16px' }}>
-            <div className="label" style={{ marginBottom:8 }}>PIT STOPS</div>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="glass" style={{ padding:'14px 18px' }}>
+            <div className="label" style={{ marginBottom:10 }}>PIT STOPS</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               {simState.pitStops.length===0 ? (
-                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-3)' }}>None yet</span>
+                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.8rem', color:'var(--text-4)' }}>None executed</span>
               ) : simState.pitStops.map(l=>(
                 <span key={l} style={{
-                  fontFamily:'var(--font-display)', fontSize:'0.68rem',
-                  background:'rgba(255,215,0,0.12)', border:'1px solid rgba(255,215,0,0.25)',
-                  color:'var(--gold)', borderRadius:6, padding:'2px 10px',
-                }}>Lap {l}</span>
+                  fontFamily:'Orbitron, monospace', fontSize:'0.75rem', fontWeight: 600,
+                  background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)',
+                  color:'var(--gold)', borderRadius:4, padding:'4px 12px',
+                }}>L{l}</span>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Progress */}
-          <div className="glass" style={{ padding:'12px 16px' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="glass" style={{ padding:'14px 18px' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
               <div className="label">RACE PROGRESS</div>
-              <div style={{ fontFamily:'var(--font-display)', fontSize:'0.6rem', color:'var(--red)' }}>{Math.round(pct)}%</div>
+              <div style={{ fontFamily:'Orbitron, monospace', fontSize:'0.7rem', color:'var(--red)' }}>{Math.round(pct)}%</div>
             </div>
-            <div style={{ height:5, background:'rgba(255,255,255,0.07)', borderRadius:3, overflow:'hidden' }}>
+            <div style={{ height:6, background:'rgba(255,255,255,0.06)', borderRadius:3, overflow:'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
               <motion.div animate={{width:`${pct}%`}} transition={{duration:0.4}}
-                style={{ height:'100%', background:'linear-gradient(90deg,var(--red),#ff6080)', borderRadius:3 }} />
+                style={{ height:'100%', background:'linear-gradient(90deg, #ff0033, #ff4060)', borderRadius:3, boxShadow: '0 0 10px rgba(255,0,51,0.5)' }} />
             </div>
-          </div>
+          </motion.div>
 
           {simState.running && (
             <button onClick={onStop} style={{
-              fontFamily:'var(--font-display)', fontSize:'0.68rem', fontWeight:600,
-              letterSpacing:'0.1em', padding:'10px', borderRadius:'var(--radius-sm)', cursor:'pointer',
-              background:'rgba(255,60,60,0.1)', border:'1px solid rgba(255,60,60,0.25)', color:'#ff5050',
-            }}>⏹ Stop</button>
+              fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:700,
+              letterSpacing:'0.1em', padding:'12px', borderRadius:'8px', cursor:'pointer',
+              background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.3)', color:'#ff4444',
+              transition: 'all 0.2s'
+            }}>⏹ ABORT SIMULATION</button>
           )}
         </div>
       </div>
 
       {/* Live chart */}
-      <div className="glass" style={{ padding:'18px 18px 8px' }}>
-        <div className="label" style={{ marginBottom:14 }}>LIVE LAP TIME TRACE</div>
-        <ResponsiveContainer width="100%" height={160}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className="glass" style={{ padding:'20px 24px 10px' }}>
+        <div className="label" style={{ marginBottom:18, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--red)'}}>■</span> LIVE LAP TIME TRACE
+        </div>
+        <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="lapG" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#e8002d" stopOpacity={0.28} />
-                <stop offset="95%" stopColor="#e8002d" stopOpacity={0.02} />
+                <stop offset="5%"  stopColor="#e8002d" stopOpacity={0.4} />
+                <stop offset="95%" stopColor="#e8002d" stopOpacity={0.0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="lap" stroke="rgba(255,255,255,0.15)" tick={{fontSize:9,fontFamily:'Orbitron,monospace',fill:'var(--text-3)'}} />
-            <YAxis stroke="rgba(255,255,255,0.15)" domain={['auto','auto']} tick={{fontSize:9,fontFamily:'Orbitron,monospace',fill:'var(--text-3)'}} tickFormatter={v=>v.toFixed(1)} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis dataKey="lap" stroke="rgba(255,255,255,0.2)" tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickMargin={8} />
+            <YAxis stroke="rgba(255,255,255,0.0)" domain={['auto','auto']} tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickFormatter={v=>v.toFixed(1)} width={40} />
             <Tooltip
-              contentStyle={{background:'#0c0c1a',border:'1px solid rgba(232,0,45,0.3)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.65rem'}}
-              labelStyle={{color:'var(--text-3)'}} itemStyle={{color:'var(--red)'}}
-              formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`}
+              contentStyle={{background:'rgba(10,10,18,0.95)',border:'1px solid rgba(232,0,45,0.5)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.75rem', boxShadow: '0 10px 30px rgba(0,0,0,0.8)'}}
+              labelStyle={{color:'var(--text-4)'}} itemStyle={{color:'var(--red)'}}
+              formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`} cursor={{ stroke: 'rgba(232,0,45,0.4)', strokeWidth: 2, strokeDasharray: '4 4' }}
             />
-            <Area type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={2} fill="url(#lapG)" dot={false} />
-            {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.5)" strokeDasharray="4 4" />}
+            <Area type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={3} fill="url(#lapG)" dot={false} activeDot={{ r: 6, fill: '#fff', stroke: '#e8002d', strokeWidth: 2 }} />
+            {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.6)" strokeDasharray="4 4" strokeWidth={2} />}
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -516,97 +541,106 @@ function ResultsPanel({ simState, cfg, chartData, fastestObj, selectedDriver, se
   return (
     <div>
       {/* Winner banner */}
-      <motion.div initial={{opacity:0,y:-16}} animate={{opacity:1,y:0}}
-        className="glass-red" style={{ padding:'28px 32px', marginBottom:24,
+      <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} transition={{ duration: 0.6, type: "spring" }}
+        style={{ padding:'36px 40px', marginBottom:32, background: 'linear-gradient(135deg, rgba(232,0,45,0.15) 0%, rgba(0,0,0,0.5) 100%)',
+          border: '1px solid rgba(232,0,45,0.3)', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.5), inset 0 0 40px rgba(232,0,45,0.1)',
           display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
-          <div style={{ fontSize:'3rem' }}>🏆</div>
+        <div style={{ display:'flex', alignItems:'center', gap:24 }}>
+          <div style={{ fontSize:'3.5rem', filter: 'drop-shadow(0 0 20px rgba(255,215,0,0.4))' }}>🏆</div>
           <div>
-            <div className="label" style={{ marginBottom:4 }}>RACE COMPLETE · REAL ML PREDICTIONS</div>
-            <div style={{ fontFamily:'var(--font-display)', fontSize:'1.8rem', fontWeight:800, color:'var(--gold)' }}>
+            <div className="label" style={{ marginBottom:6, color: 'var(--red)', letterSpacing: '0.15em' }}>SIMULATION ARCHIVE</div>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'2.4rem', fontWeight:900, color:'#fff', textShadow: '0 0 20px rgba(255,255,255,0.2)' }}>
               {selectedDriver?.fullName || 'Driver'}
             </div>
-            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.82rem', color:'var(--text-2)', marginTop:4 }}>
-              {selectedCircuit?.name} · {cfg.laps} Laps · {selectedConstr?.name}
-              {modelInfo && <span style={{color:'var(--text-3)'}}> · {modelInfo.model_type?.toUpperCase()} model</span>}
+            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.9rem', color:'var(--text-3)', marginTop:6 }}>
+              {selectedCircuit?.name} <span style={{ opacity:0.5, margin:'0 8px' }}>|</span> {cfg.laps} Laps <span style={{ opacity:0.5, margin:'0 8px' }}>|</span> {selectedConstr?.name}
             </div>
           </div>
         </div>
-        <div style={{ textAlign:'right' }}>
-          <div className="label" style={{ marginBottom:6 }}>TOTAL TIME</div>
-          <div style={{ fontFamily:'var(--font-display)', fontSize:'2rem', fontWeight:800 }}>{formatTime(simState.totalTime)}</div>
+        <div style={{ textAlign:'right', background: 'rgba(0,0,0,0.4)', padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="label" style={{ marginBottom:8 }}>TOTAL RACE TIME</div>
+          <div style={{ fontFamily:'Orbitron, monospace', fontSize:'2.2rem', fontWeight:800, color: 'var(--gold)' }}>{formatTime(simState.totalTime)}</div>
         </div>
       </motion.div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:22 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:20, marginBottom:32 }}>
         {[
           {icon:'⚡',k:'FASTEST LAP', v:formatTime(simState.fastestLap), sub:`Lap ${fastestObj?.lap||'—'}`, c:'var(--gold)'},
           {icon:'📊',k:'AVG LAP',     v:formatTime(simState.avgTime), sub:'All laps', c:'#fff'},
           {icon:'🔧',k:'PIT STOPS',   v:simState.pitStops.length, sub:simState.pitStops.map(l=>`L${l}`).join(', ')||'None', c:'var(--green)'},
-          {icon:'🏁',k:'STARTED',     v:`P${cfg.grid}`, sub:`${cfg.year} season`, c:'var(--red)'},
-        ].map(s=>(
-          <motion.div key={s.k} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}
-            className="glass" style={{ padding:'20px 18px' }}>
-            <div style={{ fontSize:'1.5rem', marginBottom:8 }}>{s.icon}</div>
-            <div className="label" style={{ marginBottom:6 }}>{s.k}</div>
-            <div style={{ fontFamily:'var(--font-display)', fontSize:'1.4rem', fontWeight:800, color:s.c }}>{s.v}</div>
-            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.68rem', color:'var(--text-3)', marginTop:4 }}>{s.sub}</div>
+          {icon:'🏁',k:'GRID START',  v:`P${cfg.grid}`, sub:`${cfg.year} chassis`, c:'var(--red)'},
+        ].map((s,i)=>(
+          <motion.div key={s.k} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{ delay: i * 0.1 }}
+            className="glass" style={{ padding:'24px 20px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: -10, right: -10, fontSize: '4rem', opacity: 0.05 }}>{s.icon}</div>
+            <div className="label" style={{ marginBottom:12 }}>{s.k}</div>
+            <div style={{ fontFamily:'Orbitron, monospace', fontSize:'1.6rem', fontWeight:800, color:s.c }}>{s.v}</div>
+            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-4)', marginTop:6 }}>{s.sub}</div>
           </motion.div>
         ))}
       </div>
 
       {/* Chart + table */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 280px', gap:18, marginBottom:24 }}>
-        <div className="glass" style={{ padding:'18px 18px 8px' }}>
-          <div className="label" style={{ marginBottom:14 }}>FULL RACE LAP TIMES</div>
-          <ResponsiveContainer width="100%" height={220}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:24, marginBottom:32 }}>
+        <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{ delay: 0.4 }} className="glass" style={{ padding:'24px 24px 16px' }}>
+          <div className="label" style={{ marginBottom:20 }}>LAP TIME DISTRIBUTION</div>
+          <ResponsiveContainer width="100%" height={260}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="lap" stroke="rgba(255,255,255,0.15)" tick={{fontSize:9,fontFamily:'Orbitron,monospace',fill:'var(--text-3)'}} />
-              <YAxis stroke="rgba(255,255,255,0.15)" domain={['auto','auto']} tick={{fontSize:9,fontFamily:'Orbitron,monospace',fill:'var(--text-3)'}} tickFormatter={v=>v.toFixed(1)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="lap" stroke="rgba(255,255,255,0.15)" tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickMargin={10} />
+              <YAxis stroke="rgba(255,255,255,0.0)" domain={['auto','auto']} tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickFormatter={v=>v.toFixed(1)} width={40} />
               <Tooltip
-                contentStyle={{background:'#0c0c1a',border:'1px solid rgba(232,0,45,0.3)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.65rem'}}
-                formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`}
+                contentStyle={{background:'rgba(10,10,18,0.95)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.75rem', boxShadow: '0 10px 40px rgba(0,0,0,0.8)'}}
+                formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`} cursor={{ stroke: 'rgba(255,255,255,0.2)' }}
               />
-              <Line type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={2} dot={{r:2,fill:'#e8002d'}} />
-              <Line type="monotone" dataKey="pure" stroke="rgba(232,0,45,0.35)" strokeWidth={1} dot={false} strokeDasharray="4 4" />
-              {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.5)" strokeDasharray="5 5" />}
-              {simState.pitStops.map(l=>(<ReferenceLine key={l} x={l} stroke="rgba(0,230,118,0.4)" strokeDasharray="3 3" />))}
+              <Line type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={3} dot={{r:3,fill:'#e8002d', strokeWidth:0}} activeDot={{r:6, fill:'#fff'}} />
+              <Line type="monotone" dataKey="pure" stroke="rgba(255,255,255,0.3)" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+              {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.6)" strokeDasharray="4 4" strokeWidth={2} />}
+              {simState.pitStops.map(l=>(<ReferenceLine key={l} x={l} stroke="rgba(0,230,118,0.6)" strokeDasharray="4 4" strokeWidth={2} />))}
             </LineChart>
           </ResponsiveContainer>
-          <div style={{ display:'flex', gap:16, marginTop:10, paddingLeft:8 }}>
-            {[['—— Total time','#e8002d'],['- - Pure lap','rgba(232,0,45,0.5)'],['— — Fastest','rgba(255,215,0,0.6)'],['| Pit stop','rgba(0,230,118,0.5)']].map(([l,c])=>(
-              <div key={l} style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <div style={{ display:'flex', gap:20, marginTop:16, paddingLeft:10 }}>
+            {[['—— Total time','#e8002d'],['- - Pure lap','rgba(255,255,255,0.4)'],['— — Fastest','rgba(255,215,0,0.6)'],['| Pit stop','rgba(0,230,118,0.6)']].map(([l,c])=>(
+              <div key={l} style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <div style={{ width:16, height:2, background:c }} />
-                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.62rem', color:'var(--text-3)' }}>{l}</span>
+                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.7rem', color:'var(--text-3)' }}>{l}</span>
               </div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
         {/* Lap table */}
-        <div className="glass" style={{ padding:16, overflowY:'auto', maxHeight:300 }}>
-          <div className="label" style={{ marginBottom:12 }}>LAP BREAKDOWN</div>
-          {simState.lapTimes.map(l=>(
-            <div key={l.lap} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-              padding:'4px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
-              <span style={{ fontFamily:'var(--font-display)', fontSize:'0.62rem', color:'var(--text-3)', width:24 }}>L{l.lap}</span>
-              <span style={{ fontFamily:'var(--font-display)', fontSize:'0.72rem', fontWeight:600,
-                color: l.lap===fastestObj?.lap?'var(--gold)': l.isPit?'var(--green)':'#fff' }}>
-                {formatTime(l.time)}
-              </span>
-              <span style={{ fontFamily:'var(--font-display)', fontSize:'0.6rem', color:'var(--text-3)' }}>
-                {formatTime(l.pure)}
-              </span>
-              {l.isPit && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.58rem', color:'var(--green)', background:'rgba(0,230,118,0.1)', border:'1px solid rgba(0,230,118,0.2)', borderRadius:4, padding:'1px 5px' }}>PIT</span>}
-              {l.lap===fastestObj?.lap && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.58rem', color:'var(--gold)', background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:4, padding:'1px 5px' }}>⚡FL</span>}
-            </div>
-          ))}
-        </div>
+        <motion.div initial={{opacity:0, x:20}} animate={{opacity:1, x:0}} transition={{ delay: 0.5 }} className="glass" style={{ padding: '24px 0 0 0', display: 'flex', flexDirection: 'column', height: 350 }}>
+          <div className="label" style={{ marginBottom:16, paddingLeft: 24 }}>LAP BREAKDOWN</div>
+          <div style={{ overflowY:'auto', flex: 1, padding: '0 24px 24px 24px' }}>
+            {simState.lapTimes.map((l, i)=>(
+              <motion.div key={l.lap} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 + i * 0.02 }}
+                style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+                <span style={{ fontFamily:'var(--font-display)', fontSize:'0.7rem', color:'var(--text-4)', width:28 }}>L{l.lap}</span>
+                <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.85rem', fontWeight:700,
+                  color: l.lap===fastestObj?.lap?'var(--gold)': l.isPit?'var(--green)':'#fff' }}>
+                  {formatTime(l.time)}
+                </span>
+                <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.65rem', color:'var(--text-4)' }}>
+                  {formatTime(l.pure)}
+                </span>
+                <div style={{ width: 45, textAlign: 'right' }}>
+                  {l.isPit && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.6rem', color:'var(--green)', background:'rgba(0,230,118,0.1)', border:'1px solid rgba(0,230,118,0.2)', borderRadius:4, padding:'2px 6px' }}>PIT</span>}
+                  {l.lap===fastestObj?.lap && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.6rem', color:'var(--gold)', background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:4, padding:'2px 6px' }}>FL</span>}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
       </div>
 
-      <button className="btn-ghost" onClick={onReset}>← New Simulation</button>
+      <div style={{ textAlign: 'center', marginTop: 40 }}>
+        <button className="btn-secondary" style={{ padding: '14px 40px', fontSize: '0.8rem' }} onClick={onReset}>
+          ⟲ CONFIGURE NEW RACE
+        </button>
+      </div>
     </div>
   );
 }
@@ -614,15 +648,24 @@ function ResultsPanel({ simState, cfg, chartData, fastestObj, selectedDriver, se
 // ═══════════════════════════════════════════════════
 // SHARED COMPONENTS
 // ═══════════════════════════════════════════════════
-function GlassCard({ title, sub, children }) {
+function GlassCard({ title, sub, children, delay = 0 }) {
   return (
-    <div className="glass" style={{ padding:20 }}>
-      <div style={{ marginBottom:14 }}>
-        <div style={{ fontFamily:'var(--font-display)', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.16em', color:'var(--red)', marginBottom:2 }}>{title}</div>
-        <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.72rem', color:'var(--text-3)' }}>{sub}</div>
+    <motion.div 
+      initial={{ opacity: 0, y: 30 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      transition={{ delay, duration: 0.5, ease: 'easeOut' }}
+      className="glass" 
+      style={{ padding: 24, position: 'relative', overflow: 'hidden' }}
+    >
+      <div style={{ marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 12 }}>
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:800, letterSpacing:'0.15em', color:'var(--red)', marginBottom:6, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 14, background: 'var(--red)', borderRadius: 2 }} />
+          {title}
+        </div>
+        <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-4)' }}>{sub}</div>
       </div>
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -630,13 +673,16 @@ function SliderRow({ label, val, min, max, unit, onChange, style }) {
   const pct = ((val - min) / (max - min)) * 100;
   return (
     <div style={style}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.8rem', color:'var(--text-2)' }}>{label}</span>
-        <span style={{ fontFamily:'var(--font-display)', fontSize:'0.8rem', fontWeight:700, color:'var(--red)' }}>{unit}</span>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
+        <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.85rem', color:'var(--text-2)' }}>{label}</span>
+        <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.9rem', fontWeight:700, color:'var(--red)' }}>{unit}</span>
       </div>
       <input type="range" min={min} max={max} value={val}
         onChange={e=>onChange(Number(e.target.value))}
-        style={{ background:`linear-gradient(to right, var(--red) ${pct}%, rgba(255,255,255,0.1) ${pct}%)` }}
+        style={{ 
+          background:`linear-gradient(to right, var(--red) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
+          boxShadow: `0 0 10px rgba(232,0,45,${pct > 0 ? 0.3 : 0})`
+        }}
       />
     </div>
   );
