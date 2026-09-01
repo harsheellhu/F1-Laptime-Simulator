@@ -14,12 +14,15 @@
     "@react-three/fiber": "^8.15.0",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.300.0",
+    "motion": "^13.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-icons": "^5.7.0",
     "recharts": "^2.10.0",
     "three": "^0.160.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/three": "^0.160.0",
@@ -28,6 +31,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "globals": "^15.0.0",
+    "tailwindcss": "^4.3.3",
     "vite": "^5.0.0"
   }
 }

@@ -1,52 +1,102 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AreaChart, Area, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine,
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import { api, formatTime } from '../api/client';
 import TrackView from './TrackView';
+import CarLiveryPreview from './CarLiveryPreview';
+import LiquidGlassHero from './LiquidGlassHero';
+import MultiDriverComparison from './MultiDriverComparison';
+import {
+  getLivery,
+  getDriverProfile,
+  getTeamCarModels,
+} from '../data/teamLiveries';
+import { getCircuitTrack } from '../data/circuitTracks';
+import {
+  calculateLapSectors,
+  analyzeSectors,
+  analyzePitStops,
+  formatSector,
+} from '../utils/sectorPhysics';
+
+import { WeatherEngine } from '../engines/WeatherEngine';
+import { TrackConditionEngine } from '../engines/TrackConditionEngine';
+import { StrategyEngine } from '../engines/StrategyEngine';
+import { TYRE_COMPOUNDS } from '../engines/TyrePerformanceEngine';
 
 const PIT_LOSS_SEC = 22.5;
 
-// Constructor color map (circuitId → hex) — matched to backend IDs
-const CONS_COLORS = {
-  1:'#00D2BE',2:'#1E41FF',3:'#DC0000',4:'#FF8000',5:'#006F62',
-  6:'#0090FF',7:'#005AFF',8:'#2B4562',9:'#900000',10:'#CCCCCC',
-};
-
 export default function Simulator({ onBack }) {
-  // ── API data (loaded once)
-  const [drivers,      setDrivers]      = useState([]);
-  const [circuits,     setCircuits]     = useState([]);
-  const [constructors, setConstructors] = useState([]);
-  const [modelInfo,    setModelInfo]    = useState(null);
-  const [apiOnline,    setApiOnline]    = useState(false);
-  const [loadErr,      setLoadErr]      = useState('');
+  // Mode: 'single' | 'multi'
+  const [simMode, setSimMode] = useState('single');
 
-  // ── User configuration
+  // Reference data loaded from backend
+  const [drivers, setDrivers] = useState([]);
+  const [circuits, setCircuits] = useState([]);
+  const [constructors, setConstructors] = useState([]);
+  const [modelInfo, setModelInfo] = useState(null);
+  const [apiOnline, setApiOnline] = useState(false);
+  const [loadErr, setLoadErr] = useState('');
+
+  // User configuration (Single driver mode)
   const [cfg, setCfg] = useState({
-    driver_id: null, constructor_id: null, circuit_id: null,
-    grid: 1, laps: 30, year: 2023,
-    pit_lap_1: null, pit_lap_2: null,
+    driver_id: null,
+    constructor_id: null,
+    circuit_id: null,
+    grid: 1,
+    laps: 30,
+    year: 2024,
+    strategyMode: 'auto', // auto | semi-auto | manual
   });
 
-  // ── Simulation state
-  const [phase, setPhase] = useState('setup'); // setup | live | results
+  // Simulation state
+  const [phase, setPhase] = useState('setup'); // 'setup' | 'live' | 'results'
   const [simState, setSim] = useState({
-    running:false, lapTimes:[], currentLap:0, totalTime:0,
-    fastestLap:null, avgTime:0, currentTime:null, pitStops:[],
+    running: false,
+    lapTimes: [],
+    currentLap: 0,
+    totalTime: 0,
+    fastestLap: null,
+    avgTime: 0,
+    currentTime: null,
+    pitStops: [],
+    lastSectors: null,
+    // Dynamic Simulation State
+    weather: null,
+    trackCond: null,
+    strategyDecision: null,
+    currentTyre: TYRE_COMPOUNDS.MEDIUM,
+    tyreAge: 0,
+    pitActive: false,
   });
 
   const intervalRef = useRef(null);
-  const lapRef      = useRef(0);
+  const lapRef = useRef(0);
+  const weatherRef = useRef(null);
+  const trackRef = useRef(null);
+  const strategyRef = useRef(null);
 
-  // ── Load reference data from backend
+  // Load reference data from backend
   useEffect(() => {
     (async () => {
       try {
         const [h, dr, ci, co, mi] = await Promise.all([
-          api.health(), api.drivers(), api.circuits(), api.constructors(), api.modelInfo(),
+          api.health(),
+          api.drivers(),
+          api.circuits(),
+          api.constructors(),
+          api.modelInfo(),
         ]);
         setDrivers(dr.drivers || []);
         setCircuits(ci.circuits || []);
@@ -54,38 +104,88 @@ export default function Simulator({ onBack }) {
         setModelInfo(mi);
         setApiOnline(true);
 
-        // Auto-select first valid IDs - use the numeric IDs from the dataset
         if (dr.valid_driver_ids?.length) {
-          const firstDriver = dr.valid_driver_ids[0];
-          const firstConstr = co.constructors?.[0]?.constructorId_num || 1;
-          const firstCirc   = ci.valid_circuit_ids?.[0];
-          setCfg(p => ({
+          const firstDriverId = dr.valid_driver_ids[0];
+          const driverProfile = getDriverProfile(firstDriverId);
+          const firstCirc = ci.valid_circuit_ids?.[0] ?? (ci.circuits?.[0]?.circuitId_num ?? 1);
+          setCfg((p) => ({
             ...p,
-            driver_id: firstDriver,
-            constructor_id: firstConstr,
-            circuit_id: firstCirc ?? (ci.circuits?.[0]?.circuitId_num ?? 1),
+            driver_id: firstDriverId,
+            constructor_id: driverProfile.constructorId_num || 2,
+            circuit_id: firstCirc,
+            year: 2024,
           }));
         }
       } catch (e) {
         setApiOnline(false);
-        setLoadErr('Python backend is offline. Start the FastAPI server first: uvicorn f1_simulator.backend.main:app --reload --port 8000');
+        setLoadErr('FastAPI backend offline. Start with: uvicorn f1_simulator.backend.main:app --port 8000');
       }
     })();
   }, []);
 
-  const upd = (key, val) => setCfg(p => ({ ...p, [key]: val }));
+  // When updating driver, automatically sync constructor to that driver's team!
+  const upd = (key, val) => {
+    if (key === 'driver_id') {
+      const profile = getDriverProfile(val);
+      setCfg((p) => ({
+        ...p,
+        driver_id: val,
+        constructor_id: profile.constructorId_num || p.constructor_id,
+      }));
+    } else {
+      setCfg((p) => ({ ...p, [key]: val }));
+    }
+  };
 
-  const selectedDriver  = drivers.find(d => d.driverId_num === cfg.driver_id);
-  const selectedCircuit = circuits.find(c => c.circuitId_num === cfg.circuit_id);
-  const selectedConstr  = constructors.find(c => c.constructorId_num === cfg.constructor_id);
-  const carColor = CONS_COLORS[cfg.constructor_id] || '#e8002d';
+  const selectedDriver = drivers.find((d) => d.driverId_num === cfg.driver_id);
+  const selectedCircuit = circuits.find((c) => c.circuitId_num === cfg.circuit_id);
+  const circuitMetadata = getCircuitTrack(cfg.circuit_id);
+  const driverProfile = getDriverProfile(cfg.driver_id);
+  const livery = getLivery(cfg.constructor_id || driverProfile.constructorId_num);
+  const teamCarModels = getTeamCarModels(livery.id);
 
-  // ── Start simulation
+  // Sector and pit stop analysis
+  const sectorAnalysis = useMemo(
+    () => analyzeSectors(simState.lapTimes),
+    [simState.lapTimes]
+  );
+  const pitAnalysis = useMemo(
+    () =>
+      analyzePitStops(
+        [cfg.pit_lap_1, cfg.pit_lap_2].filter(Boolean),
+        cfg.laps
+      ),
+    [cfg.pit_lap_1, cfg.pit_lap_2, cfg.laps]
+  );
+
+  // Start simulation
   const startSim = useCallback(async () => {
     if (!apiOnline) return;
     setPhase('live');
     lapRef.current = 0;
-    setSim({ running:true, lapTimes:[], currentLap:0, totalTime:0, fastestLap:null, avgTime:0, currentTime:null, pitStops:[] });
+    
+    // Initialize Engines
+    weatherRef.current = new WeatherEngine();
+    trackRef.current = new TrackConditionEngine();
+    strategyRef.current = new StrategyEngine('BALANCED');
+
+    setSim({
+      running: true,
+      lapTimes: [],
+      currentLap: 0,
+      totalTime: 0,
+      fastestLap: null,
+      avgTime: 0,
+      currentTime: null,
+      pitStops: [],
+      lastSectors: null,
+      weather: weatherRef.current.getCurrentWeather(),
+      trackCond: trackRef.current.getCondition(),
+      strategyDecision: null,
+      currentTyre: TYRE_COMPOUNDS.MEDIUM,
+      tyreAge: 0,
+      pitActive: false,
+    });
 
     const runLap = async () => {
       lapRef.current += 1;
@@ -94,158 +194,317 @@ export default function Simulator({ onBack }) {
       try {
         const res = await api.predict({
           lap,
-          grid:               cfg.grid,
-          total_laps:         cfg.laps,
-          driver_id:          cfg.driver_id,
-          constructor_id:     cfg.constructor_id,
-          circuit_id:         cfg.circuit_id,
-          circuit_length_km:  selectedCircuit?.length_km || 5.0,
-          year:               cfg.year,
+          grid: cfg.grid,
+          total_laps: cfg.laps,
+          driver_id: cfg.driver_id,
+          constructor_id: cfg.constructor_id,
+          circuit_id: cfg.circuit_id,
+          circuit_length_km: selectedCircuit?.length_km || circuitMetadata?.length_km || 5.0,
+          year: cfg.year,
         });
 
-        const isPit = [cfg.pit_lap_1, cfg.pit_lap_2].includes(lap);
-        const lapTime = res.lap_time_sec + (isPit ? PIT_LOSS_SEC : 0);
+        setSim((prev) => {
+          // 1. Advance engines
+          weatherRef.current.tick();
+          const currWeather = weatherRef.current.getCurrentWeather();
+          trackRef.current.tick(currWeather);
+          const trackCond = trackRef.current.getCondition();
 
-        setSim(prev => {
-          const times = [...prev.lapTimes, { lap, time: lapTime, pure: res.lap_time_sec, isPit }];
-          const pureTimes = times.filter(l => !l.isPit).map(l => l.pure);
+          // 2. Strategy & Pit Logic
+          let isPit = false;
+          let pitActive = false;
+          let newTyre = prev.currentTyre;
+          let newTyreAge = prev.tyreAge + 1;
+          
+          const decision = strategyRef.current.evaluatePitStrategy(
+            weatherRef.current,
+            trackRef.current,
+            prev.currentTyre,
+            prev.tyreAge,
+            lap
+          );
+
+          if (cfg.strategyMode === 'auto' && decision.decision === 'PIT NOW') {
+            isPit = true;
+            pitActive = true;
+            newTyre = decision.recommendedTyre;
+            newTyreAge = 0;
+          } else if (cfg.strategyMode === 'manual' && prev.pitActive) {
+            isPit = true;
+            pitActive = false;
+            // Simplified manual logic, assumes medium on pit
+            newTyreAge = 0;
+          }
+
+          // 3. Lap Time Calculation
+          const lapTime = res.lap_time_sec + (isPit ? PIT_LOSS_SEC : 0);
+          const sectors = calculateLapSectors(lap, lapTime, isPit, 5.0, trackCond.grip);
+
+          const times = [
+            ...prev.lapTimes,
+            { lap, time: lapTime, pure: res.lap_time_sec, isPit, sectors },
+          ];
+          const pureTimes = times.filter((l) => !l.isPit).map((l) => l.pure);
+          
           return {
             ...prev,
             currentLap: lap,
-            lapTimes:   times,
+            lapTimes: times,
             currentTime: lapTime,
-            totalTime:  prev.totalTime + lapTime,
+            totalTime: prev.totalTime + lapTime,
             fastestLap: Math.min(...pureTimes),
-            avgTime:    pureTimes.reduce((a,b)=>a+b,0) / pureTimes.length,
-            pitStops:   isPit ? [...prev.pitStops, lap] : prev.pitStops,
-            running:    lap < cfg.laps,
+            avgTime: pureTimes.reduce((a, b) => a + b, 0) / pureTimes.length,
+            pitStops: isPit ? [...prev.pitStops, lap] : prev.pitStops,
+            lastSectors: sectors,
+            running: lap < cfg.laps,
+            weather: currWeather,
+            trackCond,
+            strategyDecision: decision,
+            currentTyre: newTyre,
+            tyreAge: newTyreAge,
+            pitActive,
           };
         });
 
         if (lap >= cfg.laps) {
           clearInterval(intervalRef.current);
-          setSim(p => ({ ...p, running:false }));
-          setTimeout(() => setPhase('results'), 600);
+          setSim((p) => ({ ...p, running: false }));
+          setTimeout(() => setPhase('results'), 500);
         }
       } catch (e) {
         clearInterval(intervalRef.current);
-        setSim(p => ({ ...p, running:false }));
+        setSim((p) => ({ ...p, running: false }));
       }
     };
 
     await runLap();
-    intervalRef.current = setInterval(runLap, 700);
-  }, [cfg, apiOnline, selectedCircuit]);
+    intervalRef.current = setInterval(runLap, 1200);
+  }, [cfg, apiOnline, selectedCircuit, circuitMetadata]);
 
   const stopSim = () => {
     clearInterval(intervalRef.current);
-    setSim(p => ({ ...p, running:false }));
+    setSim((p) => ({ ...p, running: false }));
   };
 
   useEffect(() => () => clearInterval(intervalRef.current), []);
 
-  const chartData = simState.lapTimes.map(l => ({
+  const chartData = simState.lapTimes.map((l) => ({
     lap: l.lap,
     time: parseFloat(l.time.toFixed(3)),
     pure: parseFloat(l.pure.toFixed(3)),
   }));
-  const fastestObj = simState.lapTimes.reduce((b,l) => !l.isPit && (!b || l.pure < b.pure) ? l : b, null);
+  const fastestObj = simState.lapTimes.reduce(
+    (b, l) => (!l.isPit && (!b || l.pure < b.pure) ? l : b),
+    null
+  );
 
   return (
-    <div style={{ minHeight:'100vh', background:'var(--bg-void)' }}>
-      {/* ── Sticky header ── */}
-      <header style={{
-        position:'sticky', top:0, zIndex:200,
-        background:'rgba(3,3,10,0.92)', backdropFilter:'blur(24px)',
-        borderBottom:'1px solid var(--glass-border)', padding:'0 24px',
-      }}>
-        <div style={{ maxWidth:1400, margin:'0 auto', display:'flex', alignItems:'center', height:60, gap:16 }}>
-          <button onClick={onBack} className="btn-ghost" style={{ padding:'7px 16px', fontSize:'0.6rem' }}>← HOME</button>
+    <div style={{ minHeight: 'calc(100vh - 80px)', background: 'var(--bg-void)' }}>
+      {/* Top Header Mode Toggle & Navigation */}
+      <div
+        style={{
+          maxWidth: 1380,
+          margin: '0 auto',
+          padding: '0 24px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          marginBottom: 24,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={onBack}
+            className="btn-ghost"
+            style={{ padding: '6px 14px', fontSize: '0.66rem' }}
+          >
+            ← HOME
+          </button>
 
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{
-              width:34, height:34, background:'var(--red)', borderRadius:8,
-              display:'flex', alignItems:'center', justifyContent:'center',
-              fontFamily:'var(--font-display)', fontWeight:900, fontSize:'0.8rem',
-              boxShadow:'0 0 16px var(--red-glow)',
-            }}>F1</div>
-            <div>
-              <div style={{ fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:700, letterSpacing:'0.08em' }}>LAP TIME SIMULATOR</div>
-              <div className="label">{selectedCircuit?.name || 'Select circuit'}</div>
-            </div>
-          </div>
-
-          {/* Tab nav */}
-          <nav style={{ flex:1, display:'flex', justifyContent:'center', gap:4 }}>
-            {['setup','live','results'].map(tab => (
-              <button key={tab} onClick={() => setPhase(tab)} style={{
-                fontFamily:'var(--font-display)', fontSize:'0.62rem', fontWeight:600,
-                letterSpacing:'0.1em', textTransform:'uppercase',
-                padding:'7px 18px', borderRadius:7, border:'none', cursor:'pointer',
-                background: phase===tab ? 'var(--red)' : 'transparent',
-                color: phase===tab ? '#fff' : 'var(--text-3)',
-                transition:'all 0.2s',
-                boxShadow: phase===tab ? '0 0 14px var(--red-glow)' : 'none',
-              }}>{tab}</button>
-            ))}
-          </nav>
-
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <span className={`status-dot ${apiOnline?'online':'offline'}`} />
-            <span style={{ fontFamily:'var(--font-display)', fontSize:'0.6rem', letterSpacing:'0.1em',
-              color: apiOnline ? 'var(--green)' : 'var(--gold)' }}>
-              {apiOnline ? 'API ONLINE' : 'API OFFLINE'}
-            </span>
+          {/* Mode Switcher: Single vs Multi-Driver Battle */}
+          <div
+            style={{
+              display: 'flex',
+              background: 'rgba(255, 255, 255, 0.04)',
+              padding: 3,
+              borderRadius: 8,
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            <button
+              onClick={() => setSimMode('single')}
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '0.64rem',
+                fontWeight: 700,
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                background: simMode === 'single' ? 'var(--red)' : 'transparent',
+                color: simMode === 'single' ? '#fff' : 'var(--text-3)',
+                transition: 'all 0.2s',
+              }}
+            >
+              SINGLE DRIVER
+            </button>
+            <button
+              onClick={() => setSimMode('multi')}
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '0.64rem',
+                fontWeight: 700,
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                background: simMode === 'multi' ? 'var(--red)' : 'transparent',
+                color: simMode === 'multi' ? '#fff' : 'var(--text-3)',
+                transition: 'all 0.2s',
+                boxShadow: simMode === 'multi' ? '0 0 14px var(--red-glow)' : 'none',
+              }}
+            >
+              MULTI-DRIVER BATTLE (2 TO N)
+            </button>
           </div>
         </div>
-      </header>
 
-      <div style={{ maxWidth:1400, margin:'0 auto', padding:'28px 24px 60px' }}>
-        {/* Offline warning */}
-        {!apiOnline && loadErr && (
-          <div className="offline-banner">
-            ⚠️ {loadErr}
+        {/* Phase Tabs for Single Mode */}
+        {simMode === 'single' && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 4,
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: 4,
+              borderRadius: 10,
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+            }}
+          >
+            {[
+              { id: 'setup', label: '1. SETUP' },
+              { id: 'live', label: '2. TELEMETRY & SECTORS' },
+              { id: 'results', label: '3. RACE ARCHIVE' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setPhase(tab.id)}
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '0.64rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  padding: '6px 16px',
+                  borderRadius: 7,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: phase === tab.id ? 'var(--red)' : 'transparent',
+                  color: phase === tab.id ? '#fff' : 'var(--text-3)',
+                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: phase === tab.id ? '0 0 16px var(--red-glow)' : 'none',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         )}
+      </div>
 
-        <AnimatePresence mode="wait">
-          {phase === 'setup' && (
-            <motion.div key="setup"
-              initial={{opacity:0,x:-20}} animate={{opacity:1,x:0}} exit={{opacity:0,x:20}}
-              transition={{duration:0.25}}>
-              <SetupPanel
-                cfg={cfg} upd={upd}
-                drivers={drivers} circuits={circuits} constructors={constructors}
-                selectedDriver={selectedDriver} selectedCircuit={selectedCircuit} selectedConstr={selectedConstr}
-                apiOnline={apiOnline} onStart={startSim}
-              />
-            </motion.div>
-          )}
-          {phase === 'live' && (
-            <motion.div key="live"
-              initial={{opacity:0,x:-20}} animate={{opacity:1,x:0}} exit={{opacity:0,x:20}}
-              transition={{duration:0.25}}>
-              <LivePanel
-                simState={simState} cfg={cfg} chartData={chartData}
-                fastestObj={fastestObj} selectedCircuit={selectedCircuit}
-                carColor={carColor} onStop={stopSim}
-              />
-            </motion.div>
-          )}
-          {phase === 'results' && (
-            <motion.div key="results"
-              initial={{opacity:0,x:-20}} animate={{opacity:1,x:0}} exit={{opacity:0,x:20}}
-              transition={{duration:0.25}}>
-              <ResultsPanel
-                simState={simState} cfg={cfg} chartData={chartData}
-                fastestObj={fastestObj}
-                selectedDriver={selectedDriver} selectedCircuit={selectedCircuit}
-                selectedConstr={selectedConstr} modelInfo={modelInfo}
-                onReset={() => { setPhase('setup'); setSim(s=>({...s,lapTimes:[],completed:false})); }}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div style={{ maxWidth: 1380, margin: '0 auto', padding: '0 24px 60px' }}>
+        {!apiOnline && loadErr && <div className="offline-banner">⚠️ {loadErr}</div>}
+
+        {/* Multi-Driver Comparison Mode */}
+        {simMode === 'multi' ? (
+          <MultiDriverComparison
+            drivers={drivers}
+            circuits={circuits}
+            constructors={constructors}
+            apiOnline={apiOnline}
+            initialCircuitId={cfg.circuit_id || 1}
+          />
+        ) : (
+          /* Single Driver Simulation Mode */
+          <AnimatePresence mode="wait">
+            {phase === 'setup' && (
+              <motion.div
+                key="setup"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25 }}
+              >
+                <SetupPanel
+                  cfg={cfg}
+                  upd={upd}
+                  drivers={drivers}
+                  circuits={circuits}
+                  constructors={constructors}
+                  selectedDriver={selectedDriver}
+                  circuitMetadata={circuitMetadata}
+                  driverProfile={driverProfile}
+                  livery={livery}
+                  teamCarModels={teamCarModels}
+                  apiOnline={apiOnline}
+                  onStart={startSim}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'live' && (
+              <motion.div
+                key="live"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25 }}
+              >
+                <LivePanel
+                  simState={simState}
+                  cfg={cfg}
+                  chartData={chartData}
+                  fastestObj={fastestObj}
+                  sectorAnalysis={sectorAnalysis}
+                  pitAnalysis={pitAnalysis}
+                  circuitMetadata={circuitMetadata}
+                  driverProfile={driverProfile}
+                  livery={livery}
+                  onStop={stopSim}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'results' && (
+              <motion.div
+                key="results"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25 }}
+              >
+                <ResultsPanel
+                  simState={simState}
+                  cfg={cfg}
+                  chartData={chartData}
+                  fastestObj={fastestObj}
+                  sectorAnalysis={sectorAnalysis}
+                  pitAnalysis={pitAnalysis}
+                  selectedDriver={selectedDriver}
+                  selectedCircuit={selectedCircuit}
+                  circuitMetadata={circuitMetadata}
+                  driverProfile={driverProfile}
+                  livery={livery}
+                  modelInfo={modelInfo}
+                  onReset={() => {
+                    setPhase('setup');
+                    setSim((s) => ({ ...s, lapTimes: [], completed: false }));
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );
@@ -254,161 +513,191 @@ export default function Simulator({ onBack }) {
 // ═══════════════════════════════════════════════════
 // SETUP PANEL
 // ═══════════════════════════════════════════════════
-function SetupPanel({ cfg, upd, drivers, circuits, constructors, selectedDriver, selectedCircuit, selectedConstr, apiOnline, onStart }) {
+function SetupPanel({
+  cfg,
+  upd,
+  drivers,
+  circuits,
+  constructors,
+  selectedDriver,
+  circuitMetadata,
+  driverProfile,
+  livery,
+  teamCarModels,
+  apiOnline,
+  onStart,
+}) {
+  const handleDriverChange = (driverId) => {
+    upd('driver_id', driverId);
+    const prof = getDriverProfile(driverId);
+    if (prof && prof.constructorId_num) {
+      upd('constructor_id', prof.constructorId_num);
+    }
+  };
+
+  const handleConstructorChange = (constructorId) => {
+    upd('constructor_id', constructorId);
+    const teamLivery = getLivery(constructorId);
+    const teamDriverIds = Object.keys(teamLivery.drivers || {}).map(Number);
+    if (teamDriverIds.length > 0 && !teamDriverIds.includes(cfg.driver_id)) {
+      upd('driver_id', teamDriverIds[0]);
+    }
+  };
+
   return (
-    <div>
-      <div style={{ marginBottom:32 }}>
-        <div className="divider-red" style={{ marginBottom:14 }} />
-        <h2 className="heading-lg" style={{ letterSpacing: '0.05em' }}>RACE CONFIGURATION</h2>
-        <p style={{ color:'var(--text-3)', fontFamily:'var(--font-ui)', marginTop:8, fontSize: '0.9rem' }}>
-          Select parameters to feed into the XGBoost engine.
-        </p>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* ── 1. Top Liquid Glass Car & Team Presentation Stage ── */}
+      <LiquidGlassHero
+        selectedDriverId={cfg.driver_id}
+        selectedConstructorId={cfg.constructor_id}
+        onSelectDriver={handleDriverChange}
+        onSelectConstructor={handleConstructorChange}
+        tireCompound={cfg.tire_compound || 'soft'}
+        onTireChange={(compound) => upd('tire_compound', compound)}
+      />
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 340px', gap:24 }}>
-        {/* Left col */}
-        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-          <GlassCard title="DRIVER" sub="Select from real 2024 grid" delay={0.1}>
-            <select className="f1-select" value={cfg.driver_id ?? ''} onChange={e=>upd('driver_id',Number(e.target.value))}>
-              <option value="">-- Select Driver --</option>
-              {drivers.map(d => (
-                <option key={d.driverId_num} value={d.driverId_num}>
-                  {d.nationality ? `${d.fullName}` : d.fullName || `Driver ${d.driverId_num}`}
-                </option>
-              ))}
-            </select>
-            {selectedDriver && (
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                style={{ marginTop:16, padding:'16px', background:'rgba(255,255,255,0.03)',
-                border:'1px solid var(--glass-border)', borderRadius:'12px',
-                display:'flex', alignItems:'center', gap:16, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5)' }}>
-                <div style={{
-                  width:48, height:48, borderRadius:12, background:'linear-gradient(135deg, var(--red), #800018)',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.2rem',
-                  boxShadow:'0 4px 12px rgba(232,0,45,0.4)', border: '1px solid #ff4d6d'
-                }}>{selectedDriver.race_skill || '?'}</div>
-                <div>
-                  <div style={{ fontFamily:'var(--font-display)', fontSize:'1rem', fontWeight:800 }}>{selectedDriver.fullName}</div>
-                  <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-3)', marginTop:4 }}>
-                    {selectedDriver.team} · {selectedDriver.nationality}
-                  </div>
-                  <div style={{ display:'flex', gap:12, marginTop:8 }}>
-                    {[['Race',selectedDriver.race_skill],['Qual',selectedDriver.qualifying_skill],['Wet',selectedDriver.wet_skill]].map(([l,v])=>(
-                      <div key={l} style={{ textAlign:'center', background: 'rgba(0,0,0,0.3)', padding: '4px 10px', borderRadius: 6 }}>
-                        <div style={{ fontFamily:'Orbitron, monospace', fontSize:'0.85rem', fontWeight:700, color:'var(--red)' }}>{v}</div>
-                        <div className="label" style={{ fontSize: '0.55rem' }}>{l}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </GlassCard>
-
-          <GlassCard title="CONSTRUCTOR" sub="Select team" delay={0.2}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 }}>
-              {constructors.map(c => {
-                const isSel = cfg.constructor_id===c.constructorId_num;
-                return (
-                <button key={c.constructorId_num}
-                  onClick={() => upd('constructor_id', c.constructorId_num)}
-                  style={{
-                    fontFamily:'var(--font-ui)', fontSize:'0.78rem', fontWeight:700,
-                    padding:'12px', borderRadius:'8px', cursor:'pointer',
-                    border:`1px solid ${isSel ? '#e8002d' : 'rgba(255,255,255,0.05)'}`,
-                    background: isSel ? 'rgba(232,0,45,0.15)' : 'rgba(0,0,0,0.3)',
-                    color: isSel ? '#fff' : 'var(--text-3)',
-                    boxShadow: isSel ? 'inset 0 0 12px rgba(232,0,45,0.3), 0 0 10px rgba(232,0,45,0.2)' : 'none',
-                    transition:'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}>
-                  {c.name}
-                </button>
-              )})}
-            </div>
-          </GlassCard>
-        </div>
-
-        {/* Centre col */}
-        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-          <GlassCard title="CIRCUIT" sub="Select from real F1 calendar" delay={0.3}>
-            <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:400, overflowY:'auto', paddingRight: 4 }}>
-              {circuits.map(c => {
-                const isSel = cfg.circuit_id===c.circuitId_num;
-                return (
-                <button key={c.circuitId_num}
+      {/* ── 2. Circuit Selection, Race Parameters & Pit Strategy Grid ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20 }}>
+        {/* Authentic Circuit Selector */}
+        <GlassCard title="GRAND PRIX CIRCUIT" sub="Official 2024 Track Topology">
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              maxHeight: 460,
+              overflowY: 'auto',
+              paddingRight: 4,
+            }}
+          >
+            {circuits.map((c) => {
+              const isSel = cfg.circuit_id === c.circuitId_num;
+              const trackData = getCircuitTrack(c.circuitId_num);
+              return (
+                <button
+                  key={c.circuitId_num}
                   onClick={() => upd('circuit_id', c.circuitId_num)}
                   style={{
-                    fontFamily:'var(--font-ui)', fontSize:'0.85rem', fontWeight: isSel?700:500,
-                    padding:'12px 16px', borderRadius:'8px', textAlign:'left', cursor:'pointer',
-                    border:`1px solid ${isSel?'var(--red)':'rgba(255,255,255,0.04)'}`,
-                    background: isSel?'linear-gradient(90deg, rgba(232,0,45,0.2), rgba(232,0,45,0.05))':'rgba(0,0,0,0.25)',
-                    color: isSel?'#fff':'var(--text-2)',
-                    transition:'all 0.2s',
-                    display:'flex', justifyContent:'space-between', alignItems: 'center'
-                  }}>
-                  <span>{c.country} <span style={{ opacity: 0.5, margin: '0 6px' }}>|</span> {c.name}</span>
-                  <span style={{ color:isSel?'var(--red)':'var(--text-4)', fontFamily: 'Orbitron, monospace', fontSize:'0.7rem' }}>{c.length_km}km</span>
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: '0.82rem',
+                    fontWeight: isSel ? 700 : 500,
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: `1px solid ${isSel ? livery.secondary : 'rgba(255,255,255,0.04)'}`,
+                    background: isSel
+                      ? `linear-gradient(90deg, ${livery.secondary}22, rgba(255,255,255,0.02))`
+                      : 'rgba(255,255,255,0.015)',
+                    color: isSel ? '#fff' : 'var(--text-2)',
+                    transition: 'all 0.18s ease',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <div>{trackData.name || c.name}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-4)' }}>
+                      {c.country} · {trackData.turns} Turns · {trackData.drs_zones} DRS
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      color: isSel ? livery.secondary : 'var(--text-4)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      marginLeft: 8,
+                    }}
+                  >
+                    {c.length_km}km
+                  </span>
                 </button>
-              )})}
-            </div>
-          </GlassCard>
-        </div>
+              );
+            })}
+          </div>
+        </GlassCard>
 
-        {/* Right col — params + launch */}
-        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-          <GlassCard title="PARAMETERS" sub="Race settings" delay={0.4}>
-            <SliderRow label="Grid Position"  val={cfg.grid}  min={1}  max={20} unit={`P${cfg.grid}`}  onChange={v=>upd('grid',v)} />
-            <SliderRow label="Number of Laps" val={cfg.laps}  min={5}  max={70} unit={`${cfg.laps}`} onChange={v=>upd('laps',v)} style={{marginTop:24}} />
-            <SliderRow label="Race Year"      val={cfg.year}  min={2010} max={2024} unit={cfg.year} onChange={v=>upd('year',v)} style={{marginTop:24}} />
-          </GlassCard>
-
-          <GlassCard title="PIT STRATEGY" sub="Optional — leave blank for no stops" delay={0.5}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              {[['pit_lap_1','Stop 1'],['pit_lap_2','Stop 2']].map(([key,label])=>(
-                <div key={key}>
-                  <div className="label" style={{ marginBottom:8 }}>{label}</div>
-                  <select className="f1-select" style={{ padding: '10px' }} value={cfg[key]??''} onChange={e=>upd(key,e.target.value?Number(e.target.value):null)}>
-                    <option value="">No stop</option>
-                    {Array.from({length:cfg.laps-4},(_,i)=>i+3).map(l=>(
-                      <option key={l} value={l}>Lap {l}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
+        {/* Parameters & Launch Sequence */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <GlassCard title="RACE PARAMETERS" sub="Environmental & grid conditions">
+            <SliderRow
+              label="Grid Position"
+              val={cfg.grid}
+              min={1}
+              max={20}
+              unit={`P${cfg.grid}`}
+              onChange={(v) => upd('grid', v)}
+            />
+            <SliderRow
+              label="Race Distance (Laps)"
+              val={cfg.laps}
+              min={5}
+              max={70}
+              unit={`${cfg.laps} Laps`}
+              onChange={(v) => upd('laps', v)}
+              style={{ marginTop: 18 }}
+            />
           </GlassCard>
 
-          {/* Summary + launch */}
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
-            className="glass-red" style={{ padding: 24, boxShadow: '0 10px 40px rgba(232,0,45,0.15)' }}>
-            <div className="label" style={{ color:'var(--red)', marginBottom:16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)', animation: 'pulse-red 2s infinite' }} />
-              LAUNCH SEQUENCE
+          <GlassCard title="RACE STRATEGY ENGINE" sub="Weather prediction and pit intelligence">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="label">Strategy Control Mode</div>
+              <select
+                className="f1-select"
+                style={{ padding: '10px' }}
+                value={cfg.strategyMode || 'auto'}
+                onChange={(e) => upd('strategyMode', e.target.value)}
+              >
+                <option value="auto">AUTO - AI manages pit stops</option>
+                <option value="semi-auto">SEMI-AUTO - AI recommends, you approve</option>
+                <option value="manual">MANUAL - You control all stops</option>
+              </select>
             </div>
-            {[
-              ['Driver',     selectedDriver?.fullName || '—'],
-              ['Team',       selectedConstr?.name || '—'],
-              ['Circuit',    selectedCircuit?.name || '—'],
-              ['Laps',       cfg.laps],
-            ].map(([k,v])=>(
-              <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-3)' }}>{k}</span>
-                <span style={{ fontFamily:'var(--font-display)', fontSize:'0.8rem', fontWeight:700 }}>{v}</span>
-              </div>
-            ))}
-            
-            <motion.button 
-              whileHover={apiOnline ? { scale: 1.03, boxShadow: '0 0 30px rgba(232,0,45,0.6)' } : {}}
-              whileTap={apiOnline ? { scale: 0.97 } : {}}
-              className="btn-primary" 
+          </GlassCard>
+
+          {/* Launch Action Card */}
+          <div
+            className="glass"
+            style={{
+              padding: 20,
+              background: `linear-gradient(135deg, ${livery.secondary}18 0%, rgba(12, 14, 24, 0.9) 100%)`,
+              border: `1px solid ${livery.secondary}44`,
+              boxShadow: `0 8px 32px ${livery.secondary}22`,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: '0.72rem',
+                color: 'var(--text-3)',
+                marginBottom: 12,
+              }}
+            >
+              Simulating <strong style={{ color: '#fff' }}>{driverProfile.name}</strong> ({cfg.year}) with{' '}
+              <strong style={{ color: livery.secondary }}>{livery.name}</strong> at{' '}
+              <strong style={{ color: '#fff' }}>{circuitMetadata?.name || 'Circuit'}</strong>
+            </div>
+            <button
+              className="btn-primary"
               onClick={onStart}
               disabled={!apiOnline || !cfg.driver_id || !cfg.circuit_id}
-              style={{ width:'100%', marginTop:24, padding:'16px', fontSize: '0.9rem', letterSpacing: '0.05em' }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                fontSize: '0.82rem',
+                background: `linear-gradient(90deg, ${livery.secondary}, #ff1844)`,
+                boxShadow: `0 0 20px ${livery.secondary}66`,
+              }}
             >
-              {apiOnline ? '🚀 INITIATE SIMULATION' : '⚠️ BACKEND OFFLINE'}
-            </motion.button>
-          </motion.div>
+              {!apiOnline
+                ? '⚠️ CONNECTING ML ENGINE...'
+                : !cfg.driver_id || !cfg.circuit_id
+                ? 'SELECT DRIVER & CIRCUIT'
+                : '🚀 START SIMULATION'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -418,118 +707,297 @@ function SetupPanel({ cfg, upd, drivers, circuits, constructors, selectedDriver,
 // ═══════════════════════════════════════════════════
 // LIVE PANEL
 // ═══════════════════════════════════════════════════
-function LivePanel({ simState, cfg, chartData, fastestObj, selectedCircuit, carColor, onStop }) {
-  const pct = simState.currentLap / cfg.laps * 100;
+function LivePanel({
+  simState,
+  cfg,
+  chartData,
+  fastestObj,
+  circuitMetadata,
+  driverProfile,
+  livery,
+  onStop,
+}) {
+  const pct = (simState.currentLap / cfg.laps) * 100;
+
   return (
     <div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:24, marginBottom:24 }}>
-        <div style={{ height:460, borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, marginBottom: 20 }}>
+        {/* Track Canvas */}
+        <div
+          style={{
+            height: 480,
+            borderRadius: 14,
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+          }}
+        >
           <TrackView
-            circuitId={selectedCircuit?.circuitId_num || 1}
+            circuitId={cfg.circuit_id}
+            driverId={cfg.driver_id}
+            constructorId={cfg.constructor_id}
             isRunning={simState.running}
             currentLap={simState.currentLap}
             totalLaps={cfg.laps}
             lastLapTime={simState.currentTime ? formatTime(simState.currentTime) : null}
-            constructorColor={carColor}
           />
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {/* LIVE Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', marginBottom: 4 }}>
-            <div className="label" style={{ color:'var(--text-4)' }}>TELEMETRY FEED</div>
-            {simState.running ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff0033', animation: 'pulse-red 1s infinite' }} />
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.65rem', color: '#ff0033', letterSpacing: '0.1em' }}>LIVE</span>
+        {/* Live Timing & Telemetry Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <CarLiveryPreview driverId={cfg.driver_id} constructorId={cfg.constructor_id} compact={true} />
+
+          {/* New: Weather Radar & Track Condition */}
+          {simState.weather && (
+            <div className="glass" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="label">WEATHER RADAR</div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-3)' }}>AIR: {Math.round(simState.weather.airTemp)}°C | TRK: {Math.round(simState.weather.trackTemp)}°C</div>
               </div>
-            ) : (
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.65rem', color: 'var(--text-4)', letterSpacing: '0.1em' }}>FINISHED</div>
-            )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
+                <div style={{ color: simState.weather.intensity > 0 ? '#0099ff' : '#fff' }}>
+                  NOW {simState.weather.icon}
+                </div>
+                <div style={{ color: 'var(--text-4)' }}>+5L</div>
+                <div style={{ color: 'var(--text-4)' }}>+10L</div>
+              </div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{simState.trackCond?.name} ({simState.trackCond?.wetness}% Wet)</span>
+                <span>Grip: {simState.trackCond?.grip}%</span>
+              </div>
+              {/* Track Condition Bar */}
+              <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative', overflow: 'hidden' }}>
+                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${simState.trackCond?.wetness}%`, background: '#0099ff', transition: 'width 1s' }} />
+              </div>
+            </div>
+          )}
+
+          {/* New: Strategy Panel */}
+          {simState.strategyDecision && (
+            <div className="glass" style={{ padding: '12px 16px', border: simState.pitActive ? '1px solid #ffb800' : '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="label" style={{ marginBottom: 6, color: simState.pitActive ? '#ffb800' : 'var(--text-3)' }}>
+                {simState.pitActive ? 'PIT STOP IN PROGRESS...' : 'RACE STRATEGY'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                 <div style={{ fontSize: '0.7rem' }}>TYRE: <strong style={{ color: simState.currentTyre.color }}>{simState.currentTyre.name}</strong> ({simState.tyreAge} Laps)</div>
+                 <div style={{ fontSize: '0.7rem', color: simState.strategyDecision.decision === 'PIT NOW' ? '#ff1844' : 'var(--text-3)' }}>
+                   {simState.strategyDecision.decision}
+                 </div>
+              </div>
+              
+              {!simState.pitActive && (
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>
+                  Reason: {simState.strategyDecision.reason}<br/>
+                  Recommend: <span style={{ color: simState.strategyDecision.recommendedTyre.color }}>{simState.strategyDecision.recommendedTyre.name}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Live Sector Timing Bar */}
+          <div className="glass" style={{ padding: '12px 16px' }}>
+            <div className="label" style={{ marginBottom: 8 }}>
+              LIVE SECTOR DELTAS (LAP {simState.currentLap || 1})
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              {[
+                { name: 'S1', time: simState.lastSectors?.s1 },
+                { name: 'S2', time: simState.lastSectors?.s2 },
+                { name: 'S3', time: simState.lastSectors?.s3 },
+              ].map((s) => (
+                <div
+                  key={s.name}
+                  style={{
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div className="label" style={{ fontSize: '0.55rem' }}>
+                    {s.name}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: s.time ? '#fff' : 'var(--text-4)',
+                    }}
+                  >
+                    {formatSector(s.time)}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {[
-            {k:'CURRENT LAP', v:`${simState.currentLap} / ${cfg.laps}`, c:'#fff'},
-            {k:'LAST LAP',    v:formatTime(simState.currentTime), c:'#fff'},
-            {k:'FASTEST LAP', v:formatTime(simState.fastestLap),  c:'var(--gold)', sub:`Lap ${fastestObj?.lap||'—'}`},
-            {k:'AVG LAP',     v:formatTime(simState.avgTime),     c:'var(--text-2)'},
-            {k:'TOTAL TIME',  v:formatTime(simState.totalTime),   c:'var(--text-2)'},
-          ].map((s, i)=>(
-            <motion.div key={s.k} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }} 
-              className="glass" style={{ padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderLeft: `3px solid ${s.c === '#fff' ? 'rgba(255,255,255,0.2)' : s.c}` }}>
-              <div className="label" style={{ color: 'var(--text-3)' }}>{s.k}</div>
+            { k: 'CURRENT LAP', v: `${simState.currentLap} / ${cfg.laps}`, c: '#fff' },
+            { k: 'LAST LAP TIME', v: formatTime(simState.currentTime), c: '#fff' },
+            {
+              k: 'FASTEST LAP',
+              v: formatTime(simState.fastestLap),
+              c: 'var(--gold)',
+              sub: `Lap ${fastestObj?.lap || '—'}`,
+            },
+            { k: 'AVERAGE PACE', v: formatTime(simState.avgTime), c: 'var(--text-2)' },
+            { k: 'TOTAL TIME', v: formatTime(simState.totalTime), c: livery.secondary },
+          ].map((s) => (
+            <div
+              key={s.k}
+              className="glass"
+              style={{
+                padding: '9px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderLeft: `3px solid ${s.c === '#fff' ? 'rgba(255,255,255,0.15)' : s.c}`,
+              }}
+            >
+              <div className="label">{s.k}</div>
               <div>
-                <div style={{ fontFamily:'Orbitron, monospace', fontSize:'1.15rem', fontWeight:700, color:s.c, textAlign:'right', textShadow: s.c !== '#fff' ? `0 0 12px ${s.c}66` : 'none' }}>{s.v}</div>
-                {s.sub && <div style={{ fontFamily: 'Orbitron, monospace', fontSize: '0.6rem', color: 'var(--text-4)', textAlign:'right', marginTop: 4 }}>{s.sub}</div>}
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    color: s.c,
+                    textAlign: 'right',
+                  }}
+                >
+                  {s.v}
+                </div>
+                {s.sub && (
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.56rem',
+                      color: 'var(--text-4)',
+                      textAlign: 'right',
+                    }}
+                  >
+                    {s.sub}
+                  </div>
+                )}
               </div>
-            </motion.div>
+            </div>
           ))}
 
-          {/* Pit stops */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="glass" style={{ padding:'14px 18px' }}>
-            <div className="label" style={{ marginBottom:10 }}>PIT STOPS</div>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {simState.pitStops.length===0 ? (
-                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.8rem', color:'var(--text-4)' }}>None executed</span>
-              ) : simState.pitStops.map(l=>(
-                <span key={l} style={{
-                  fontFamily:'Orbitron, monospace', fontSize:'0.75rem', fontWeight: 600,
-                  background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)',
-                  color:'var(--gold)', borderRadius:4, padding:'4px 12px',
-                }}>L{l}</span>
-              ))}
+          {/* Stint Progress */}
+          <div className="glass" style={{ padding: '10px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div className="label">STINT PROGRESS</div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.7rem',
+                  color: livery.secondary,
+                }}
+              >
+                {Math.round(pct)}%
+              </div>
             </div>
-          </motion.div>
-
-          {/* Progress */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="glass" style={{ padding:'14px 18px' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
-              <div className="label">RACE PROGRESS</div>
-              <div style={{ fontFamily:'Orbitron, monospace', fontSize:'0.7rem', color:'var(--red)' }}>{Math.round(pct)}%</div>
+            <div
+              style={{
+                height: 4,
+                background: 'rgba(255,255,255,0.06)',
+                borderRadius: 2,
+                overflow: 'hidden',
+              }}
+            >
+              <motion.div
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.3 }}
+                style={{
+                  height: '100%',
+                  background: `linear-gradient(90deg, ${livery.primary}, ${livery.secondary})`,
+                  borderRadius: 2,
+                }}
+              />
             </div>
-            <div style={{ height:6, background:'rgba(255,255,255,0.06)', borderRadius:3, overflow:'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-              <motion.div animate={{width:`${pct}%`}} transition={{duration:0.4}}
-                style={{ height:'100%', background:'linear-gradient(90deg, #ff0033, #ff4060)', borderRadius:3, boxShadow: '0 0 10px rgba(255,0,51,0.5)' }} />
-            </div>
-          </motion.div>
+          </div>
 
           {simState.running && (
-            <button onClick={onStop} style={{
-              fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:700,
-              letterSpacing:'0.1em', padding:'12px', borderRadius:'8px', cursor:'pointer',
-              background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.3)', color:'#ff4444',
-              transition: 'all 0.2s'
-            }}>⏹ ABORT SIMULATION</button>
+            <button
+              onClick={onStop}
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: 'rgba(255,50,50,0.08)',
+                border: '1px solid rgba(255,50,50,0.25)',
+                color: '#ff4444',
+                transition: 'all 0.2s',
+              }}
+            >
+              ⏹ ABORT SIMULATION
+            </button>
           )}
         </div>
       </div>
 
-      {/* Live chart */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className="glass" style={{ padding:'20px 24px 10px' }}>
-        <div className="label" style={{ marginBottom:18, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: 'var(--red)'}}>■</span> LIVE LAP TIME TRACE
+      {/* Real-time Telemetry Trace */}
+      <div className="glass" style={{ padding: '18px 20px 10px' }}>
+        <div className="label" style={{ marginBottom: 14 }}>
+          REAL-TIME LAP TIME TELEMETRY TRACE ({circuitMetadata?.name || 'Circuit'})
         </div>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={180}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="lapG" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#e8002d" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#e8002d" stopOpacity={0.0} />
+                <stop offset="5%" stopColor={livery.secondary} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={livery.secondary} stopOpacity={0.0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="lap" stroke="rgba(255,255,255,0.2)" tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickMargin={8} />
-            <YAxis stroke="rgba(255,255,255,0.0)" domain={['auto','auto']} tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickFormatter={v=>v.toFixed(1)} width={40} />
-            <Tooltip
-              contentStyle={{background:'rgba(10,10,18,0.95)',border:'1px solid rgba(232,0,45,0.5)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.75rem', boxShadow: '0 10px 30px rgba(0,0,0,0.8)'}}
-              labelStyle={{color:'var(--text-4)'}} itemStyle={{color:'var(--red)'}}
-              formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`} cursor={{ stroke: 'rgba(232,0,45,0.4)', strokeWidth: 2, strokeDasharray: '4 4' }}
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+            <XAxis
+              dataKey="lap"
+              stroke="rgba(255,255,255,0.15)"
+              tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--text-4)' }}
             />
-            <Area type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={3} fill="url(#lapG)" dot={false} activeDot={{ r: 6, fill: '#fff', stroke: '#e8002d', strokeWidth: 2 }} />
-            {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.6)" strokeDasharray="4 4" strokeWidth={2} />}
+            <YAxis
+              stroke="rgba(255,255,255,0.0)"
+              domain={['auto', 'auto']}
+              tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--text-4)' }}
+              tickFormatter={(v) => v.toFixed(1)}
+              width={36}
+            />
+            <Tooltip
+              contentStyle={{
+                background: 'rgba(8,9,15,0.95)',
+                border: `1px solid ${livery.secondary}66`,
+                borderRadius: 8,
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.72rem',
+              }}
+              formatter={(v) => [formatTime(v), 'Lap Time']}
+              labelFormatter={(l) => `Lap ${l}`}
+            />
+            <Area
+              type="monotone"
+              dataKey="time"
+              stroke={livery.secondary}
+              strokeWidth={2}
+              fill="url(#lapG)"
+              dot={false}
+            />
+            {fastestObj && (
+              <ReferenceLine
+                y={fastestObj.pure}
+                stroke="rgba(255,184,0,0.6)"
+                strokeDasharray="3 3"
+                strokeWidth={1.5}
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -537,108 +1005,444 @@ function LivePanel({ simState, cfg, chartData, fastestObj, selectedCircuit, carC
 // ═══════════════════════════════════════════════════
 // RESULTS PANEL
 // ═══════════════════════════════════════════════════
-function ResultsPanel({ simState, cfg, chartData, fastestObj, selectedDriver, selectedCircuit, selectedConstr, modelInfo, onReset }) {
+function ResultsPanel({
+  simState,
+  cfg,
+  chartData,
+  fastestObj,
+  sectorAnalysis,
+  pitAnalysis,
+  circuitMetadata,
+  driverProfile,
+  livery,
+  onReset,
+}) {
+  const { bestS1, bestS2, bestS3, theoreticalFormatted, lapSectors } = sectorAnalysis;
+
+  const renderSectorBadge = (secTime, colorType) => {
+    let bg = 'rgba(255,255,255,0.03)';
+    let textCol = 'var(--text-2)';
+    let border = 'transparent';
+
+    if (colorType === 'purple') {
+      bg = 'rgba(168, 85, 247, 0.2)';
+      textCol = '#c084fc';
+      border = '#a855f7';
+    } else if (colorType === 'green') {
+      bg = 'rgba(0, 230, 118, 0.15)';
+      textCol = '#00e676';
+      border = '#00e676';
+    } else if (colorType === 'yellow') {
+      bg = 'rgba(255, 184, 0, 0.1)';
+      textCol = '#ffb800';
+    }
+
+    return (
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: '0.74rem',
+          fontWeight: colorType === 'purple' || colorType === 'green' ? 700 : 500,
+          background: bg,
+          color: textCol,
+          border: `1px solid ${border}`,
+          borderRadius: 4,
+          padding: '2px 6px',
+          display: 'inline-block',
+          textAlign: 'center',
+          minWidth: 48,
+        }}
+      >
+        {formatSector(secTime)}
+      </span>
+    );
+  };
+
   return (
     <div>
-      {/* Winner banner */}
-      <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} transition={{ duration: 0.6, type: "spring" }}
-        style={{ padding:'36px 40px', marginBottom:32, background: 'linear-gradient(135deg, rgba(232,0,45,0.15) 0%, rgba(0,0,0,0.5) 100%)',
-          border: '1px solid rgba(232,0,45,0.3)', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.5), inset 0 0 40px rgba(232,0,45,0.1)',
-          display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:24 }}>
-          <div style={{ fontSize:'3.5rem', filter: 'drop-shadow(0 0 20px rgba(255,215,0,0.4))' }}>🏆</div>
+      {/* Race Winner Banner */}
+      <div
+        className="glass-formula"
+        style={{
+          padding: '26px 30px',
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderLeft: `4px solid ${livery.secondary}`,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ fontSize: '2.8rem' }}>🏆</div>
           <div>
-            <div className="label" style={{ marginBottom:6, color: 'var(--red)', letterSpacing: '0.15em' }}>SIMULATION ARCHIVE</div>
-            <div style={{ fontFamily:'var(--font-display)', fontSize:'2.4rem', fontWeight:900, color:'#fff', textShadow: '0 0 20px rgba(255,255,255,0.2)' }}>
-              {selectedDriver?.fullName || 'Driver'}
+            <div className="label" style={{ color: livery.secondary, marginBottom: 4 }}>
+              GRAND PRIX SIMULATION SUMMARY
             </div>
-            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.9rem', color:'var(--text-3)', marginTop:6 }}>
-              {selectedCircuit?.name} <span style={{ opacity:0.5, margin:'0 8px' }}>|</span> {cfg.laps} Laps <span style={{ opacity:0.5, margin:'0 8px' }}>|</span> {selectedConstr?.name}
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 900 }}>
+              {driverProfile.name} (#{driverProfile.number})
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: '0.85rem',
+                color: 'var(--text-3)',
+                marginTop: 4,
+              }}
+            >
+              {circuitMetadata?.name} · {cfg.laps} Laps · {livery.name} ({cfg.year})
             </div>
           </div>
         </div>
-        <div style={{ textAlign:'right', background: 'rgba(0,0,0,0.4)', padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="label" style={{ marginBottom:8 }}>TOTAL RACE TIME</div>
-          <div style={{ fontFamily:'Orbitron, monospace', fontSize:'2.2rem', fontWeight:800, color: 'var(--gold)' }}>{formatTime(simState.totalTime)}</div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="label" style={{ marginBottom: 4 }}>
+            TOTAL RACE TIME
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '1.8rem',
+              fontWeight: 800,
+              color: 'var(--gold)',
+            }}
+          >
+            {formatTime(simState.totalTime)}
+          </div>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:20, marginBottom:32 }}>
+      {/* Best Sectors & Theoretical Best Lap Banner */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 14,
+          marginBottom: 20,
+        }}
+      >
         {[
-          {icon:'⚡',k:'FASTEST LAP', v:formatTime(simState.fastestLap), sub:`Lap ${fastestObj?.lap||'—'}`, c:'var(--gold)'},
-          {icon:'📊',k:'AVG LAP',     v:formatTime(simState.avgTime), sub:'All laps', c:'#fff'},
-          {icon:'🔧',k:'PIT STOPS',   v:simState.pitStops.length, sub:simState.pitStops.map(l=>`L${l}`).join(', ')||'None', c:'var(--green)'},
-          {icon:'🏁',k:'GRID START',  v:`P${cfg.grid}`, sub:`${cfg.year} chassis`, c:'var(--red)'},
-        ].map((s,i)=>(
-          <motion.div key={s.k} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{ delay: i * 0.1 }}
-            className="glass" style={{ padding:'24px 20px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: -10, right: -10, fontSize: '4rem', opacity: 0.05 }}>{s.icon}</div>
-            <div className="label" style={{ marginBottom:12 }}>{s.k}</div>
-            <div style={{ fontFamily:'Orbitron, monospace', fontSize:'1.6rem', fontWeight:800, color:s.c }}>{s.v}</div>
-            <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-4)', marginTop:6 }}>{s.sub}</div>
-          </motion.div>
+          {
+            label: 'BEST SECTOR 1',
+            val: formatSector(bestS1?.time),
+            sub: `Achieved on Lap ${bestS1?.lap || '—'}`,
+            color: '#a855f7',
+            badge: '🟣 PURPLE S1',
+          },
+          {
+            label: 'BEST SECTOR 2',
+            val: formatSector(bestS2?.time),
+            sub: `Achieved on Lap ${bestS2?.lap || '—'}`,
+            color: '#a855f7',
+            badge: '🟣 PURPLE S2',
+          },
+          {
+            label: 'BEST SECTOR 3',
+            val: formatSector(bestS3?.time),
+            sub: `Achieved on Lap ${bestS3?.lap || '—'}`,
+            color: '#a855f7',
+            badge: '🟣 PURPLE S3',
+          },
+          {
+            label: 'THEORETICAL BEST LAP',
+            val: theoreticalFormatted,
+            sub: `Delta to actual: ${
+              sectorAnalysis.theoreticalLap && fastestObj?.pure
+                ? `-${(fastestObj.pure - sectorAnalysis.theoreticalLap).toFixed(3)}s`
+                : '0.000s'
+            }`,
+            color: 'var(--cyan)',
+            badge: '⚡ OPTIMAL LAP',
+          },
+        ].map((sec) => (
+          <div
+            key={sec.label}
+            className="glass"
+            style={{
+              padding: '16px 18px',
+              borderLeft: `3px solid ${sec.color}`,
+              background: 'rgba(12, 14, 24, 0.8)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span className="label">{sec.label}</span>
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.62rem',
+                  color: sec.color,
+                  fontWeight: 700,
+                }}
+              >
+                {sec.badge}
+              </span>
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '1.45rem',
+                fontWeight: 800,
+                color: sec.color,
+              }}
+            >
+              {sec.val}
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: '0.72rem',
+                color: 'var(--text-4)',
+                marginTop: 4,
+              }}
+            >
+              {sec.sub}
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Chart + table */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:24, marginBottom:32 }}>
-        <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{ delay: 0.4 }} className="glass" style={{ padding:'24px 24px 16px' }}>
-          <div className="label" style={{ marginBottom:20 }}>LAP TIME DISTRIBUTION</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-              <XAxis dataKey="lap" stroke="rgba(255,255,255,0.15)" tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickMargin={10} />
-              <YAxis stroke="rgba(255,255,255,0.0)" domain={['auto','auto']} tick={{fontSize:10,fontFamily:'Orbitron,monospace',fill:'var(--text-4)'}} tickFormatter={v=>v.toFixed(1)} width={40} />
-              <Tooltip
-                contentStyle={{background:'rgba(10,10,18,0.95)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,fontFamily:'Orbitron,monospace',fontSize:'0.75rem', boxShadow: '0 10px 40px rgba(0,0,0,0.8)'}}
-                formatter={v=>[formatTime(v),'Lap Time']} labelFormatter={l=>`Lap ${l}`} cursor={{ stroke: 'rgba(255,255,255,0.2)' }}
-              />
-              <Line type="monotone" dataKey="time" stroke="#e8002d" strokeWidth={3} dot={{r:3,fill:'#e8002d', strokeWidth:0}} activeDot={{r:6, fill:'#fff'}} />
-              <Line type="monotone" dataKey="pure" stroke="rgba(255,255,255,0.3)" strokeWidth={2} dot={false} strokeDasharray="4 4" />
-              {fastestObj && <ReferenceLine y={fastestObj.pure} stroke="rgba(255,215,0,0.6)" strokeDasharray="4 4" strokeWidth={2} />}
-              {simState.pitStops.map(l=>(<ReferenceLine key={l} x={l} stroke="rgba(0,230,118,0.6)" strokeDasharray="4 4" strokeWidth={2} />))}
-            </LineChart>
-          </ResponsiveContainer>
-          <div style={{ display:'flex', gap:20, marginTop:16, paddingLeft:10 }}>
-            {[['—— Total time','#e8002d'],['- - Pure lap','rgba(255,255,255,0.4)'],['— — Fastest','rgba(255,215,0,0.6)'],['| Pit stop','rgba(0,230,118,0.6)']].map(([l,c])=>(
-              <div key={l} style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <div style={{ width:16, height:2, background:c }} />
-                <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.7rem', color:'var(--text-3)' }}>{l}</span>
-              </div>
-            ))}
+      {/* Pit Stop Strategy & Stints Analysis Card */}
+      <div className="glass" style={{ padding: '20px 22px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div className="label">
+            PIT STOP STRATEGY & TIRE COMPOUND STINTS ({pitAnalysis.totalStops} STOPS)
           </div>
-        </motion.div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--green)' }}>
+            Average Pit Lane Delta: {pitAnalysis.avgPitLoss} · Fastest Box: {pitAnalysis.fastestStop}
+          </div>
+        </div>
 
-        {/* Lap table */}
-        <motion.div initial={{opacity:0, x:20}} animate={{opacity:1, x:0}} transition={{ delay: 0.5 }} className="glass" style={{ padding: '24px 0 0 0', display: 'flex', flexDirection: 'column', height: 350 }}>
-          <div className="label" style={{ marginBottom:16, paddingLeft: 24 }}>LAP BREAKDOWN</div>
-          <div style={{ overflowY:'auto', flex: 1, padding: '0 24px 24px 24px' }}>
-            {simState.lapTimes.map((l, i)=>(
-              <motion.div key={l.lap} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 + i * 0.02 }}
-                style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
-                <span style={{ fontFamily:'var(--font-display)', fontSize:'0.7rem', color:'var(--text-4)', width:28 }}>L{l.lap}</span>
-                <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.85rem', fontWeight:700,
-                  color: l.lap===fastestObj?.lap?'var(--gold)': l.isPit?'var(--green)':'#fff' }}>
-                  {formatTime(l.time)}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${pitAnalysis.stints.length}, 1fr)`, gap: 12 }}>
+          {pitAnalysis.stints.map((st) => (
+            <div
+              key={st.stint}
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 8,
+                padding: '12px 14px',
+                borderTop: `3px solid ${st.compound.color}`,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.74rem', fontWeight: 800 }}>
+                  STINT {st.stint}
                 </span>
-                <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.65rem', color:'var(--text-4)' }}>
-                  {formatTime(l.pure)}
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: st.compound.color,
+                    background: `${st.compound.color}22`,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                  }}
+                >
+                  {st.compound.name.toUpperCase()} ({st.compound.code})
                 </span>
-                <div style={{ width: 45, textAlign: 'right' }}>
-                  {l.isPit && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.6rem', color:'var(--green)', background:'rgba(0,230,118,0.1)', border:'1px solid rgba(0,230,118,0.2)', borderRadius:4, padding:'2px 6px' }}>PIT</span>}
-                  {l.lap===fastestObj?.lap && <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.6rem', color:'var(--gold)', background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:4, padding:'2px 6px' }}>FL</span>}
+              </div>
+              <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.76rem', color: 'var(--text-3)' }}>
+                Laps {st.startLap} – {st.endLap} ({st.length} laps)
+              </div>
+              {st.pitLap && (
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.7rem',
+                    color: 'var(--gold)',
+                    marginTop: 6,
+                  }}
+                >
+                  Boxed on Lap {st.pitLap} (Box: {st.stationaryTime}s)
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 40 }}>
-        <button className="btn-secondary" style={{ padding: '14px 40px', fontSize: '0.8rem' }} onClick={onReset}>
-          ⟲ CONFIGURE NEW RACE
+      {/* Main Grid: Sector Telemetry Table & Lap Chart */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, marginBottom: 24 }}>
+        {/* Full Lap & Sector Breakdown Table */}
+        <div
+          className="glass"
+          style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', height: 380 }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="label">
+              PER-LAP SECTOR BREAKDOWN (🟣 SESSION BEST · 🟢 PERSONAL BEST)
+            </div>
+            <div style={{ display: 'flex', gap: 10, fontSize: '0.65rem', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ color: '#c084fc' }}>🟣 Purple = Session Best</span>
+              <span style={{ color: '#00e676' }}>🟢 Green = Personal Best</span>
+            </div>
+          </div>
+
+          <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '0.62rem',
+                    color: 'var(--text-4)',
+                  }}
+                >
+                  <th style={{ padding: '6px 4px' }}>LAP</th>
+                  <th style={{ padding: '6px 4px' }}>LAP TIME</th>
+                  <th style={{ padding: '6px 4px', textAlign: 'center' }}>SECTOR 1</th>
+                  <th style={{ padding: '6px 4px', textAlign: 'center' }}>SECTOR 2</th>
+                  <th style={{ padding: '6px 4px', textAlign: 'center' }}>SECTOR 3</th>
+                  <th style={{ padding: '6px 4px', textAlign: 'right' }}>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lapSectors.map((l) => {
+                  const isFastest = l.lap === fastestObj?.lap;
+                  return (
+                    <tr
+                      key={l.lap}
+                      style={{
+                        borderBottom: '1px solid rgba(255,255,255,0.03)',
+                        background: isFastest ? 'rgba(255,184,0,0.06)' : 'transparent',
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: '6px 4px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.72rem',
+                          color: 'var(--text-4)',
+                        }}
+                      >
+                        L{l.lap}
+                      </td>
+                      <td
+                        style={{
+                          padding: '6px 4px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          color: isFastest ? 'var(--gold)' : l.isPit ? 'var(--green)' : '#fff',
+                        }}
+                      >
+                        {formatTime(l.time)}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'center' }}>
+                        {renderSectorBadge(l.sectors.s1, l.sectorColors.s1)}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'center' }}>
+                        {renderSectorBadge(l.sectors.s2, l.sectorColors.s2)}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'center' }}>
+                        {renderSectorBadge(l.sectors.s3, l.sectorColors.s3)}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        {l.isPit && (
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-ui)',
+                              fontSize: '0.6rem',
+                              color: 'var(--green)',
+                              background: 'rgba(0,230,118,0.1)',
+                              borderRadius: 3,
+                              padding: '2px 5px',
+                              marginLeft: 4,
+                            }}
+                          >
+                            PIT
+                          </span>
+                        )}
+                        {isFastest && (
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-ui)',
+                              fontSize: '0.6rem',
+                              color: 'var(--gold)',
+                              background: 'rgba(255,184,0,0.12)',
+                              borderRadius: 3,
+                              padding: '2px 5px',
+                              marginLeft: 4,
+                            }}
+                          >
+                            FASTEST
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Lap Trace Line Chart */}
+        <div className="glass" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
+          <div className="label" style={{ marginBottom: 14 }}>
+            LAP TIME CONSISTENCY & TIRE DEGRADATION
+          </div>
+          <ResponsiveContainer width="100%" height={290}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis
+                dataKey="lap"
+                stroke="rgba(255,255,255,0.15)"
+                tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--text-4)' }}
+              />
+              <YAxis
+                stroke="rgba(255,255,255,0.0)"
+                domain={['auto', 'auto']}
+                tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--text-4)' }}
+                tickFormatter={(v) => v.toFixed(1)}
+                width={36}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: 'rgba(8,9,15,0.95)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.72rem',
+                }}
+                formatter={(v) => [formatTime(v), 'Lap Time']}
+                labelFormatter={(l) => `Lap ${l}`}
+              />
+              <Line
+                type="monotone"
+                dataKey="time"
+                stroke={livery.secondary}
+                strokeWidth={2.5}
+                dot={{ r: 2, fill: livery.secondary }}
+              />
+              <Line
+                type="monotone"
+                dataKey="pure"
+                stroke="rgba(255,255,255,0.25)"
+                strokeWidth={1.5}
+                dot={false}
+                strokeDasharray="3 3"
+              />
+              {fastestObj && (
+                <ReferenceLine
+                  y={fastestObj.pure}
+                  stroke="rgba(255,184,0,0.6)"
+                  strokeDasharray="3 3"
+                  strokeWidth={1.5}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div style={{ textAlign: 'center' }}>
+        <button
+          className="btn-ghost"
+          style={{ padding: '12px 36px', fontSize: '0.76rem' }}
+          onClick={onReset}
+        >
+          ⟲ RECONFIGURE RACE
         </button>
       </div>
     </div>
@@ -648,24 +1452,38 @@ function ResultsPanel({ simState, cfg, chartData, fastestObj, selectedDriver, se
 // ═══════════════════════════════════════════════════
 // SHARED COMPONENTS
 // ═══════════════════════════════════════════════════
-function GlassCard({ title, sub, children, delay = 0 }) {
+function GlassCard({ title, sub, children }) {
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 30 }} 
-      animate={{ opacity: 1, y: 0 }} 
-      transition={{ delay, duration: 0.5, ease: 'easeOut' }}
-      className="glass" 
-      style={{ padding: 24, position: 'relative', overflow: 'hidden' }}
-    >
-      <div style={{ marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 12 }}>
-        <div style={{ fontFamily:'var(--font-display)', fontSize:'0.75rem', fontWeight:800, letterSpacing:'0.15em', color:'var(--red)', marginBottom:6, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 4, height: 14, background: 'var(--red)', borderRadius: 2 }} />
+    <div className="glass" style={{ padding: 20 }}>
+      <div
+        style={{
+          marginBottom: 16,
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          paddingBottom: 10,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '0.74rem',
+            fontWeight: 800,
+            letterSpacing: '0.12em',
+            color: 'var(--red)',
+            marginBottom: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <div style={{ width: 3, height: 12, background: 'var(--red)', borderRadius: 1 }} />
           {title}
         </div>
-        <div style={{ fontFamily:'var(--font-ui)', fontSize:'0.75rem', color:'var(--text-4)' }}>{sub}</div>
+        <div style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-4)' }}>
+          {sub}
+        </div>
       </div>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -673,15 +1491,29 @@ function SliderRow({ label, val, min, max, unit, onChange, style }) {
   const pct = ((val - min) / (max - min)) * 100;
   return (
     <div style={style}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
-        <span style={{ fontFamily:'var(--font-ui)', fontSize:'0.85rem', color:'var(--text-2)' }}>{label}</span>
-        <span style={{ fontFamily:'Orbitron, monospace', fontSize:'0.9rem', fontWeight:700, color:'var(--red)' }}>{unit}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+        <span style={{ fontFamily: 'var(--font-ui)', fontSize: '0.82rem', color: 'var(--text-2)' }}>
+          {label}
+        </span>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            color: 'var(--red)',
+          }}
+        >
+          {unit}
+        </span>
       </div>
-      <input type="range" min={min} max={max} value={val}
-        onChange={e=>onChange(Number(e.target.value))}
-        style={{ 
-          background:`linear-gradient(to right, var(--red) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
-          boxShadow: `0 0 10px rgba(232,0,45,${pct > 0 ? 0.3 : 0})`
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={val}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{
+          background: `linear-gradient(to right, var(--red) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
         }}
       />
     </div>
